@@ -21,9 +21,9 @@ args = "Run"
 name = "Run"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cargo run"
-
-[workflows.workflow.metadata]
-outputType = "console"
