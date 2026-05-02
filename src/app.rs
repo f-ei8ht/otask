@@ -6,7 +6,7 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{backend::Backend, Terminal};
 use std::fs;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,11 +49,13 @@ pub struct App {
     pub provider: Option<Arc<dyn Provider>>,
     pub provider_name: Option<String>,
     pub status: String,
+    pub status_flash: Option<Instant>,
     pub scroll: usize,
     pub is_loading: bool,
     pub should_quit: bool,
     pub cursor_pos: usize,
     pub save_count: usize,
+    pub focused_msg: Option<usize>,
 }
 
 impl App {
@@ -71,11 +73,13 @@ impl App {
             provider: None,
             provider_name: None,
             status: "No provider connected. Use /connect to get started.".to_string(),
+            status_flash: None,
             scroll: 0,
             is_loading: false,
             should_quit: false,
             cursor_pos: 0,
             save_count: 0,
+            focused_msg: None,
         }
     }
 
@@ -86,6 +90,7 @@ impl App {
         let (tx, mut rx) = mpsc::channel::<AppEvent>(32);
 
         loop {
+            self.tick_flash();
             terminal.draw(|f| crate::ui::draw(f, self))?;
 
             while let Ok(evt) = rx.try_recv() {
@@ -139,13 +144,14 @@ impl App {
                             KeyCode::Char('s') => {
                                 self.save_last_response();
                             }
-                            KeyCode::Up => {
-                                if self.scroll > 0 {
-                                    self.scroll = self.scroll.saturating_sub(1);
-                                }
+                            KeyCode::Char('y') => {
+                                self.yank_response();
                             }
-                            KeyCode::Down => {
-                                self.scroll = self.scroll.saturating_add(1);
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                self.focus_next();
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                self.focus_prev();
                             }
                             _ => {}
                         },
@@ -234,6 +240,115 @@ impl App {
                         self.status = format!("Save failed: {}", e);
                     }
                 }
+            }
+        }
+    }
+
+    fn assistant_messages(&self) -> Vec<usize> {
+        self.messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.role == "assistant")
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn focus_next(&mut self) {
+        let indices = self.assistant_messages();
+        if indices.is_empty() {
+            return;
+        }
+        self.focused_msg = Some(match self.focused_msg {
+            None => *indices.last().unwrap(),
+            Some(cur) => {
+                let pos = indices.iter().position(|&i| i == cur).unwrap_or(0);
+                indices[(pos + 1).min(indices.len() - 1)]
+            }
+        });
+        self.flash_status(format!(
+            "Response {}/{} focused — [y] copy  [s] save",
+            self.focused_position(),
+            indices.len()
+        ));
+    }
+
+    fn focus_prev(&mut self) {
+        let indices = self.assistant_messages();
+        if indices.is_empty() {
+            return;
+        }
+        self.focused_msg = Some(match self.focused_msg {
+            None => *indices.last().unwrap(),
+            Some(cur) => {
+                let pos = indices.iter().position(|&i| i == cur).unwrap_or(0);
+                indices[pos.saturating_sub(1)]
+            }
+        });
+        self.flash_status(format!(
+            "Response {}/{} focused — [y] copy  [s] save",
+            self.focused_position(),
+            indices.len()
+        ));
+    }
+
+    fn focused_position(&self) -> usize {
+        let indices = self.assistant_messages();
+        match self.focused_msg {
+            None => 0,
+            Some(cur) => indices.iter().position(|&i| i == cur).unwrap_or(0) + 1,
+        }
+    }
+
+    fn yank_response(&mut self) {
+        let idx = self.focused_msg.or_else(|| {
+            self.messages
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, m)| m.role == "assistant")
+                .map(|(i, _)| i)
+        });
+
+        let content = match idx {
+            None => {
+                self.flash_status("No response to copy yet.".to_string());
+                return;
+            }
+            Some(i) => self.messages[i].content.clone(),
+        };
+
+        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(content.clone())) {
+            Ok(_) => {
+                self.flash_status("Copied to clipboard!".to_string());
+            }
+            Err(e) => {
+                self.save_count += 1;
+                let filename = format!("response_{}.md", self.save_count);
+                match fs::write(&filename, &content) {
+                    Ok(_) => self.flash_status(format!(
+                        "Clipboard unavailable — saved to {} instead",
+                        filename
+                    )),
+                    Err(_) => self.flash_status(format!("Copy failed: {}", e)),
+                }
+            }
+        }
+    }
+
+    pub fn flash_status(&mut self, msg: String) {
+        self.status = msg;
+        self.status_flash = Some(Instant::now());
+    }
+
+    pub fn tick_flash(&mut self) {
+        if let Some(t) = self.status_flash {
+            if t.elapsed() > Duration::from_secs(3) {
+                self.status_flash = None;
+                self.status = self
+                    .provider_name
+                    .as_deref()
+                    .map(|p| format!("Connected: {}", p))
+                    .unwrap_or_else(|| "No provider connected. Use /connect to get started.".to_string());
             }
         }
     }

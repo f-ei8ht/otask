@@ -1,0 +1,65 @@
+Copy Response in Rust Coding Agent
+The basic idea — capture a keybind, grab the last assistant message, pipe it to clipboard. Here's how to do it:
+1. Add the clipboard crate
+toml# Cargo.toml
+[dependencies]
+arboard = "3"
+2. Clipboard utility
+rustuse arboard::Clipboard;
+
+pub fn copy_to_clipboard(text: &str) -> anyhow::Result<()> {
+    let mut clipboard = Clipboard::new()?;
+    clipboard.set_text(text.to_owned())?;
+    Ok(())
+}
+3. Hook it into your key handler
+Assuming you're using crossterm + ratatui:
+rustuse crossterm::event::{KeyCode, KeyModifiers};
+
+// In your event loop
+match key.code {
+    // Ctrl+Y or just 'y' — whatever keybind you want
+    KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        if let Some(last_response) = app.messages
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::Assistant)
+        {
+            match copy_to_clipboard(&last_response.content) {
+                Ok(_) => app.set_status("✓ Copied to clipboard"),
+                Err(e) => app.set_status(&format!("Copy failed: {e}")),
+            }
+        }
+    }
+    _ => {}
+}
+4. Show a toast/flash message
+rustpub struct App {
+    pub status_message: Option<(String, Instant)>,
+    // ...
+}
+
+impl App {
+    pub fn set_status(&mut self, msg: &str) {
+        self.status_message = Some((msg.to_string(), Instant::now()));
+    }
+
+    // Call this in your render loop
+    pub fn clear_expired_status(&mut self) {
+        if let Some((_, time)) = &self.status_message {
+            if time.elapsed() > Duration::from_secs(2) {
+                self.status_message = None;
+            }
+        }
+    }
+}
+5. Render the status bar
+rust// In your UI render fn
+if let Some((msg, _)) = &app.status_message {
+    let status = Paragraph::new(msg.as_str())
+        .style(Style::default().fg(Color::Green));
+    f.render_widget(status, status_area);
+}
+
+OpenCode specifically does it with y to yank (vim-style) the focused message block. If you want block-level copy (not just last message), you'd track a focused_message_index: usize and let the user navigate messages with j/k then hit y to copy that specific block.
+Want me to add that navigation + per-block copy logic too?

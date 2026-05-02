@@ -156,7 +156,7 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
 
-    for msg in &app.messages {
+    for (idx, msg) in app.messages.iter().enumerate() {
         match msg.role.as_str() {
             "system" => {
                 lines.push(Line::from(vec![
@@ -193,20 +193,33 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
                 lines.push(Line::from(""));
             }
             "assistant" => {
+                let is_focused = app.focused_msg == Some(idx);
+                let (gutter_color, label_extra) = if is_focused {
+                    (ACCENT, " ◀ focused")
+                } else {
+                    (PRIMARY, "")
+                };
                 lines.push(Line::from(vec![
-                    Span::styled("  ╔ ", Style::default().fg(PRIMARY)),
+                    Span::styled("  ╔ ", Style::default().fg(gutter_color)),
                     Span::styled(
                         "Assistant",
                         Style::default()
-                            .fg(PRIMARY)
+                            .fg(gutter_color)
                             .add_modifier(Modifier::BOLD),
                     ),
+                    Span::styled(
+                        label_extra,
+                        Style::default().fg(ACCENT).add_modifier(Modifier::ITALIC),
+                    ),
                 ]));
+                let pipe_style = if is_focused {
+                    Style::default().fg(ACCENT)
+                } else {
+                    Style::default().fg(BORDER)
+                };
                 let md = md_to_text(&msg.content);
                 for md_line in md.lines {
-                    let mut prefixed_spans = vec![
-                        Span::styled("  ║ ", Style::default().fg(BORDER)),
-                    ];
+                    let mut prefixed_spans = vec![Span::styled("  ║ ", pipe_style)];
                     prefixed_spans.extend(md_line.spans);
                     lines.push(Line::from(prefixed_spans));
                 }
@@ -322,7 +335,7 @@ fn draw_statusbar(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::styled(mode_hint, Style::default().fg(MUTED_FG)),
         Span::styled("│", Style::default().fg(BORDER)),
-        Span::styled(" [i] Type  [/] Command  [s] Save  [↑↓] Scroll  [q] Quit ", Style::default().fg(MUTED_FG)),
+        Span::styled(" [i] Type  [/] Cmd  [j/k] Navigate  [y] Copy  [s] Save  [q] Quit ", Style::default().fg(MUTED_FG)),
         Span::styled("│", Style::default().fg(BORDER)),
         Span::styled(
             format!(" {} ", app.status),
