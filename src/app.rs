@@ -1,3 +1,4 @@
+use crate::editor::{EditorAction, EditorMode, EditorState};
 use crate::providers::{
     anthropic::AnthropicProvider, cerebras::CerebrasProvider, codex::CodexProvider, Message,
     Provider, ProviderType,
@@ -34,6 +35,7 @@ pub enum InputMode {
 pub enum Overlay {
     None,
     CommandPalette,
+    FileOpen,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +66,8 @@ pub struct App {
     pub save_count: usize,
     pub focused_msg: Option<usize>,
     pub palette_scroll: usize,
+    pub editor: Option<EditorState>,
+    pub file_open_buf: String,
 }
 
 impl App {
@@ -85,6 +89,8 @@ impl App {
             save_count: 0,
             focused_msg: None,
             palette_scroll: 0,
+            editor: None,
+            file_open_buf: String::new(),
         }
     }
 
@@ -121,22 +127,28 @@ impl App {
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
                     Event::Mouse(mouse) => {
-                        match mouse.kind {
-                            MouseEventKind::ScrollDown => {
-                                if self.overlay == Overlay::CommandPalette {
-                                    self.palette_scroll = self.palette_scroll.saturating_add(1);
-                                } else {
-                                    self.scroll_down(3);
+                        if self.editor.is_some() {
+                            // no mouse in editor
+                        } else {
+                            match mouse.kind {
+                                MouseEventKind::ScrollDown => {
+                                    if self.overlay == Overlay::CommandPalette {
+                                        self.palette_scroll =
+                                            self.palette_scroll.saturating_add(1);
+                                    } else {
+                                        self.scroll_down(3);
+                                    }
                                 }
-                            }
-                            MouseEventKind::ScrollUp => {
-                                if self.overlay == Overlay::CommandPalette {
-                                    self.palette_scroll = self.palette_scroll.saturating_sub(1);
-                                } else {
-                                    self.scroll_up(3);
+                                MouseEventKind::ScrollUp => {
+                                    if self.overlay == Overlay::CommandPalette {
+                                        self.palette_scroll =
+                                            self.palette_scroll.saturating_sub(1);
+                                    } else {
+                                        self.scroll_up(3);
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
                     Event::Key(key) => {
@@ -146,6 +158,47 @@ impl App {
                             break;
                         }
 
+                        // ── Editor active ────────────────────────────────────
+                        if self.editor.is_some() {
+                            let action = self.handle_editor_key(key);
+                            if action == EditorAction::Quit {
+                                self.editor = None;
+                            }
+                            continue;
+                        }
+
+                        // ── File-open prompt ─────────────────────────────────
+                        if self.overlay == Overlay::FileOpen {
+                            match key.code {
+                                KeyCode::Esc => {
+                                    self.overlay = Overlay::None;
+                                    self.file_open_buf.clear();
+                                }
+                                KeyCode::Enter => {
+                                    let path = self.file_open_buf.trim().to_string();
+                                    self.file_open_buf.clear();
+                                    self.overlay = Overlay::None;
+                                    if !path.is_empty() {
+                                        let fp = if path == "new" {
+                                            None
+                                        } else {
+                                            Some(path)
+                                        };
+                                        self.editor = Some(EditorState::open(fp));
+                                    }
+                                }
+                                KeyCode::Backspace => {
+                                    self.file_open_buf.pop();
+                                }
+                                KeyCode::Char(c) => {
+                                    self.file_open_buf.push(c);
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        // ── Global shortcuts ─────────────────────────────────
                         if key.modifiers.contains(KeyModifiers::CONTROL)
                             && key.code == KeyCode::Char('k')
                         {
@@ -165,22 +218,34 @@ impl App {
                             continue;
                         }
 
+                        if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('v')
+                        {
+                            self.overlay = Overlay::FileOpen;
+                            self.file_open_buf.clear();
+                            continue;
+                        }
+
+                        // ── Command palette keys ─────────────────────────────
                         if self.overlay == Overlay::CommandPalette {
                             match key.code {
                                 KeyCode::Esc => {
                                     self.overlay = Overlay::None;
                                 }
                                 KeyCode::Down | KeyCode::Char('j') => {
-                                    self.palette_scroll = self.palette_scroll.saturating_add(1);
+                                    self.palette_scroll =
+                                        self.palette_scroll.saturating_add(1);
                                 }
                                 KeyCode::Up | KeyCode::Char('k') => {
-                                    self.palette_scroll = self.palette_scroll.saturating_sub(1);
+                                    self.palette_scroll =
+                                        self.palette_scroll.saturating_sub(1);
                                 }
                                 _ => {}
                             }
                             continue;
                         }
 
+                        // ── Normal AI agent keys ─────────────────────────────
                         match self.input_mode {
                             InputMode::Normal => match key.code {
                                 KeyCode::Char('q') => break,
@@ -273,6 +338,105 @@ impl App {
         }
 
         Ok(())
+    }
+
+    fn handle_editor_key(&mut self, key: crossterm::event::KeyEvent) -> EditorAction {
+        let ed = match self.editor.as_mut() {
+            Some(e) => e,
+            None => return EditorAction::None,
+        };
+
+        match ed.mode {
+            EditorMode::Normal => {
+                if ed.pending_d {
+                    ed.pending_d = false;
+                    if key.code == KeyCode::Char('d') {
+                        ed.delete_line();
+                    }
+                    return EditorAction::None;
+                }
+
+                match key.code {
+                    KeyCode::Char('h') | KeyCode::Left => ed.move_left(),
+                    KeyCode::Char('j') | KeyCode::Down => ed.move_down(),
+                    KeyCode::Char('k') | KeyCode::Up => ed.move_up(),
+                    KeyCode::Char('l') | KeyCode::Right => ed.move_right(),
+                    KeyCode::Char('0') => ed.goto_line_start(),
+                    KeyCode::Char('$') => ed.goto_line_end(),
+                    KeyCode::Char('g') => ed.goto_first_line(),
+                    KeyCode::Char('G') => ed.goto_last_line(),
+                    KeyCode::Char('i') => {
+                        ed.mode = EditorMode::Insert;
+                        ed.status_msg = None;
+                    }
+                    KeyCode::Char('a') => {
+                        ed.move_right();
+                        ed.mode = EditorMode::Insert;
+                        ed.status_msg = None;
+                    }
+                    KeyCode::Char('o') => ed.open_line_below(),
+                    KeyCode::Char('O') => ed.open_line_above(),
+                    KeyCode::Char('d') => {
+                        ed.pending_d = true;
+                    }
+                    KeyCode::Char('x') => ed.delete_char(),
+                    KeyCode::Char(':') => {
+                        ed.mode = EditorMode::Command;
+                        ed.command_buf.clear();
+                        ed.status_msg = None;
+                    }
+                    _ => {}
+                }
+                EditorAction::None
+            }
+
+            EditorMode::Insert => {
+                match key.code {
+                    KeyCode::Esc => {
+                        ed.mode = EditorMode::Normal;
+                        if ed.cursor_col > 0 {
+                            ed.cursor_col -= 1;
+                        }
+                    }
+                    KeyCode::Enter => ed.enter(),
+                    KeyCode::Backspace => ed.backspace(),
+                    KeyCode::Delete => ed.delete_char(),
+                    KeyCode::Left => ed.move_left(),
+                    KeyCode::Right => ed.move_right(),
+                    KeyCode::Up => ed.move_up(),
+                    KeyCode::Down => ed.move_down(),
+                    KeyCode::Home => ed.goto_line_start(),
+                    KeyCode::End => ed.goto_line_end(),
+                    KeyCode::Char(c) => ed.insert_char(c),
+                    _ => {}
+                }
+                EditorAction::None
+            }
+
+            EditorMode::Command => {
+                match key.code {
+                    KeyCode::Esc => {
+                        ed.mode = EditorMode::Normal;
+                        ed.command_buf.clear();
+                    }
+                    KeyCode::Enter => {
+                        return ed.execute_command();
+                    }
+                    KeyCode::Backspace => {
+                        if ed.command_buf.is_empty() {
+                            ed.mode = EditorMode::Normal;
+                        } else {
+                            ed.command_buf.pop();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        ed.command_buf.push(c);
+                    }
+                    _ => {}
+                }
+                EditorAction::None
+            }
+        }
     }
 
     fn scroll_down(&mut self, amount: usize) {
@@ -408,6 +572,14 @@ impl App {
             }
             ["/new"] => {
                 self.new_session();
+            }
+            ["/edit"] => {
+                self.overlay = Overlay::FileOpen;
+                self.file_open_buf.clear();
+            }
+            ["/edit", path] => {
+                let path = path.to_string();
+                self.editor = Some(EditorState::open(Some(path)));
             }
             ["/help"] => {
                 self.flash_status("press ctrl+k to see all commands".to_string());

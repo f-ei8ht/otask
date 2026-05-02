@@ -1,0 +1,77 @@
+ Docs.rs
+ nvim-rs-0.9.2 
+ Platform 
+ Feature flags
+docs.rs
+Rust
+ 
+Find crate
+nvim_rs
+0.9.2
+All Items
+Sections
+Rust library for Neovim clients
+Origins
+Status
+Crate Items
+Re-exports
+Modules
+Macros
+Enums
+Crates
+nvim_rs
+Type ‘S’ or ‘/’ to search, ‘?’ for more options…
+Crate nvim_rsCopy item path
+Settings
+Help
+
+Summary
+Source
+Rust library for Neovim clients
+Implements support for rust plugins for Neovim through its msgpack-rpc API.
+
+Origins
+This library started as a fork of neovim-lib with the goal to utilize Rust’s async/await to allow requests/notification to/from neovim to be arbitrarily nested. After the fork, I started implementing more ideas I had for this library.
+
+Status
+As of the end of 2019, I’m somewhat confident to recommend starting to use this library. The overall handling should not change anymore. A breaking change I kind of expect is adding error variants to CallError when I start working on the API (right now, it panics when messages don’t have the right format, I’ll want to return proper errors in that case).
+
+I’ve not yet worked through the details of what-to-export, but I’m quite willing to consider what people need or want.
+
+Re-exports
+pub use crate::exttypes::Buffer;
+pub use crate::exttypes::Tabpage;
+pub use crate::exttypes::Window;
+pub use crate::neovim::Neovim;
+pub use crate::rpc::handler::Handler;
+pub use crate::uioptions::UiAttachOptions;
+pub use crate::uioptions::UiOption;
+Modules
+compatuse_tokio
+A re-export of tokio-util’s Compat
+create
+Functions to spawn a neovim session.
+error
+Errors of nvim-rs.
+examples
+Examples on how to use nvim-rs.
+exttypes
+Buffers, windows, tabpages of neovim
+neovim
+An active neovim session.
+neovim_api
+The auto generated API for neovim
+neovim_api_manual
+Some manually implemented API functions
+rpc
+RPC functionality for neovim
+uioptions
+Options for UI implementations
+Macros
+call_args
+Pack the given arguments into a Vec<Value>, suitable for using it for a call to neovim.
+impl_exttype_traits
+A macro to implement trait for the exttypes
+Enums
+Value
+Represents any valid MessagePack value.

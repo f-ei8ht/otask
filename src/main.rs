@@ -1,4 +1,5 @@
 mod app;
+mod editor;
 mod markdown;
 mod providers;
 mod ui;
