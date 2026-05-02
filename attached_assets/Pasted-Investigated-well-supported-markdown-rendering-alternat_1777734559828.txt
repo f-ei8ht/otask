@@ -1,0 +1,82 @@
+Investigated well-supported markdown rendering alternatives for Ratatui
+Investigated well-supported markdown rendering alternatives for Ratatui
+Honestly, there's no well-supported ready-made Ratatui markdown widget. The real production approach is:
+
+Parse with pulldown-cmark → convert to Ratatui Text manually
+
+pulldown-cmark is rock solid (used everywhere in the Rust ecosystem).
+
+toml
+[dependencies]
+pulldown-cmark = "0.11"
+ratatui = "0.29"
+Simple converter:
+
+rust
+use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
+
+pub fn md_to_text(md: &str) -> Text<'static> {
+    let parser = Parser::new(md);
+    let mut lines: Vec<Line> = vec![];
+    let mut current: Vec<Span> = vec![];
+    let mut style = Style::default();
+
+    for event in parser {
+        match event {
+            Event::Text(t) => current.push(Span::styled(t.to_string(), style)),
+            Event::Code(t) => current.push(Span::styled(
+                t.to_string(),
+                Style::default().fg(Color::Yellow),
+            )),
+            Event::Start(Tag::Strong) => style = style.add_modifier(Modifier::BOLD),
+            Event::End(TagEnd::Strong) => style = Style::default(),
+            Event::Start(Tag::Emphasis) => style = style.add_modifier(Modifier::ITALIC),
+            Event::End(TagEnd::Emphasis) => style = Style::default(),
+            Event::Start(Tag::Heading { .. }) => {
+                style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                style = Style::default();
+            }
+            Event::SoftBreak | Event::HardBreak => {
+                lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+            }
+            Event::End(TagEnd::Paragraph) => {
+                lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                lines.push(Line::raw("")); // empty line between paragraphs
+            }
+            _ => {}
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(Line::from(current));
+    }
+
+    Text::from(lines)
+}
+Then use it:
+
+rust
+let text = md_to_text(&self.model_response);
+let paragraph = Paragraph::new(text)
+    .block(Block::default().title(" Output ").borders(Borders::ALL))
+    .scroll((self.scroll, 0));
+frame.render_widget(paragraph, area);
+Why this is better:
+
+pulldown-cmark is battle-tested, maintained, spec-compliant
+You fully control the styling — match it to your app's theme
+No experimental deps, no breakage risk
+Easy to extend (add code block bg color, list bullets, etc.)
+You'll write maybe 50-80 lines total and it'll be more reliable than any crate.
+
+
+Want to be notified when Claude responds?
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
