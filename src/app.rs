@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-const DEFAULT_EXA_KEY: &str = "6717a103-1690-4180-a645-028950251c31";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -90,7 +89,9 @@ impl App {
             provider_name: None,
             cerebras_key: None,
             cerebras_model: None,
-            exa: Arc::new(ExaClient::new(DEFAULT_EXA_KEY.to_string())),
+            exa: Arc::new(ExaClient::new(
+                std::env::var("EXA_API_KEY").unwrap_or_default(),
+            )),
             status: String::new(),
             status_flash: None,
             scroll: usize::MAX,
