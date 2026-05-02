@@ -76,10 +76,26 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
         ("no provider connected".to_string(), MUTED)
     };
 
-    let mode_indicator = format!("{}  ·  {}", app.mode, provider_text);
+    let mode_color = match app.mode {
+        Mode::Plan => ACCENT,
+        Mode::Edit => GREEN,
+    };
+    let mode_switch_hint = match app.mode {
+        Mode::Plan => "  [e] edit",
+        Mode::Edit => "  [p] plan",
+    };
+
+    let mode_line = Line::from(vec![
+        Span::styled(
+            format!(" {} ", app.mode),
+            Style::default().fg(BG).bg(mode_color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(mode_switch_hint, Style::default().fg(DIM)),
+        Span::styled("  ·  ", Style::default().fg(DIM)),
+        Span::styled(provider_text, Style::default().fg(pcolor)),
+    ]);
     f.render_widget(
-        Paragraph::new(Span::styled(mode_indicator, Style::default().fg(pcolor)))
-            .alignment(Alignment::Center),
+        Paragraph::new(mode_line).alignment(Alignment::Center),
         provider_area,
     );
 
@@ -352,7 +368,7 @@ fn draw_command_palette(f: &mut Frame, app: &App, area: Rect) {
         ("enter", "send message", "send your message to the AI"),
         ("esc", "normal mode / close", "exit typing or close this panel"),
         ("p", "plan mode", "switch to planning mode"),
-        ("b", "edit / build mode", "switch to edit mode"),
+        ("e", "edit / build mode", "switch to edit mode"),
         ("j / ↓", "scroll down", "scroll chat or navigate responses"),
         ("k / ↑", "scroll up", "scroll chat or navigate responses"),
         ("y", "copy response", "copy last response to clipboard"),

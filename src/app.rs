@@ -181,7 +181,7 @@ impl App {
                                     self.mode = Mode::Plan;
                                     self.flash_status("plan mode".to_string());
                                 }
-                                KeyCode::Char('b') => {
+                                KeyCode::Char('e') => {
                                     self.mode = Mode::Edit;
                                     self.flash_status("edit mode".to_string());
                                 }
