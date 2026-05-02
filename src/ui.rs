@@ -322,7 +322,7 @@ fn draw_statusbar(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::styled(mode_hint, Style::default().fg(MUTED_FG)),
         Span::styled("│", Style::default().fg(BORDER)),
-        Span::styled(" [i] Type  [/] Command  [↑↓] Scroll  [q] Quit ", Style::default().fg(MUTED_FG)),
+        Span::styled(" [i] Type  [/] Command  [s] Save  [↑↓] Scroll  [q] Quit ", Style::default().fg(MUTED_FG)),
         Span::styled("│", Style::default().fg(BORDER)),
         Span::styled(
             format!(" {} ", app.status),

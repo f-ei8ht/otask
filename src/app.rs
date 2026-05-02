@@ -4,6 +4,7 @@ use crate::providers::{
 };
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{backend::Backend, Terminal};
+use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -52,6 +53,7 @@ pub struct App {
     pub is_loading: bool,
     pub should_quit: bool,
     pub cursor_pos: usize,
+    pub save_count: usize,
 }
 
 impl App {
@@ -73,6 +75,7 @@ impl App {
             is_loading: false,
             should_quit: false,
             cursor_pos: 0,
+            save_count: 0,
         }
     }
 
@@ -132,6 +135,9 @@ impl App {
                                 self.input_mode = InputMode::Typing;
                                 self.input = "/".to_string();
                                 self.cursor_pos = 1;
+                            }
+                            KeyCode::Char('s') => {
+                                self.save_last_response();
                             }
                             KeyCode::Up => {
                                 if self.scroll > 0 {
@@ -199,6 +205,37 @@ impl App {
         }
 
         Ok(())
+    }
+
+    fn save_last_response(&mut self) {
+        let last = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "assistant");
+
+        match last {
+            None => {
+                self.status = "No response to save yet.".to_string();
+            }
+            Some(msg) => {
+                self.save_count += 1;
+                let filename = format!("response_{}.md", self.save_count);
+                match fs::write(&filename, &msg.content) {
+                    Ok(_) => {
+                        self.status = format!("Saved to {}  — open it in the file tree to copy.", filename);
+                        self.messages.push(ChatMessage {
+                            role: "system".to_string(),
+                            content: format!("Response saved to `{}`", filename),
+                        });
+                        self.scroll_to_bottom();
+                    }
+                    Err(e) => {
+                        self.status = format!("Save failed: {}", e);
+                    }
+                }
+            }
+        }
     }
 
     async fn handle_input(&mut self, input: String, tx: mpsc::Sender<AppEvent>) {
