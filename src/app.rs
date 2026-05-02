@@ -69,7 +69,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
-            mode: Mode::Plan,
+            mode: Mode::Edit,
             input_mode: InputMode::Normal,
             overlay: Overlay::None,
             input: String::new(),

@@ -54,11 +54,7 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
 
     let title_line = Line::from(vec![
         Span::styled(
-            "AI",
-            Style::default().fg(FG).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            "Code",
+            "otask",
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ),
     ]);
@@ -104,8 +100,6 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let hints = Line::from(vec![
-        Span::styled("tab", Style::default().fg(MUTED)),
-        Span::styled("  agents  ", Style::default().fg(DIM)),
         Span::styled("ctrl+k", Style::default().fg(MUTED)),
         Span::styled("  commands", Style::default().fg(DIM)),
     ]);
