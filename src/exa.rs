@@ -122,26 +122,15 @@ pub async fn plan_chat(
     }]);
 
     // Tool calling loop — max 3 searches to stay within QPS budget
-    for round in 0..3usize {
-        let body = if round == 0 {
-            json!({
-                "model": model,
-                "messages": messages,
-                "tools": tools,
-                "parallel_tool_calls": false,
-                "max_tokens": 4096,
-                "temperature": 0.7
-            })
-        } else {
-            json!({
-                "model": model,
-                "messages": messages,
-                "tools": tools,
-                "parallel_tool_calls": false,
-                "max_tokens": 4096,
-                "temperature": 0.7
-            })
-        };
+    for _round in 0..3usize {
+        let body = json!({
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "parallel_tool_calls": false,
+            "max_tokens": 4096,
+            "temperature": 0.7
+        });
 
         let resp = http
             .post("https://api.cerebras.ai/v1/chat/completions")
@@ -159,18 +148,16 @@ pub async fn plan_chat(
         let data: serde_json::Value = resp.json().await?;
         let choice = &data["choices"][0]["message"];
 
+        // ── Path A: proper OpenAI-format tool_calls field ────────────────────
         if let Some(tool_calls) = choice["tool_calls"].as_array() {
             if tool_calls.is_empty() {
-                let content = choice["content"].as_str().unwrap_or("").to_string();
-                return Ok(content);
+                return Ok(choice["content"].as_str().unwrap_or("").to_string());
             }
 
-            // Append the assistant message (with tool_calls) to history
             messages.push(choice.clone());
 
-            // Execute each tool call
             for tc in tool_calls {
-                let call_id = tc["id"].as_str().unwrap_or("").to_string();
+                let call_id = tc["id"].as_str().unwrap_or("call_0").to_string();
                 let fn_name = tc["function"]["name"].as_str().unwrap_or("");
                 let args_raw = tc["function"]["arguments"].as_str().unwrap_or("{}");
 
@@ -181,7 +168,6 @@ pub async fn plan_chat(
                     let result = exa.search(&query).await.unwrap_or_else(|e| {
                         format!("Search failed: {}", e)
                     });
-
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": call_id,
@@ -189,12 +175,58 @@ pub async fn plan_chat(
                     }));
                 }
             }
-            // loop continues → send results back to model
-        } else {
-            // No tool calls — model gave a final answer
-            let content = choice["content"].as_str().unwrap_or("").to_string();
-            return Ok(content);
+            // loop continues — send search results back to model
+            continue;
         }
+
+        // ── Path B: gpt-oss-120b text-format fallback ────────────────────────
+        // The model sometimes outputs the call as plain JSON in `content`
+        // e.g. {"name":"web_search","arguments":{"query":"..."}}
+        // instead of populating tool_calls. Detect and handle it.
+        let content = choice["content"].as_str().unwrap_or("").trim().to_string();
+
+        if let Ok(maybe_call) = serde_json::from_str::<serde_json::Value>(&content) {
+            if maybe_call["name"].as_str() == Some("web_search") {
+                let query = maybe_call["arguments"]["query"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+
+                if !query.is_empty() {
+                    let result = exa.search(&query).await.unwrap_or_else(|e| {
+                        format!("Search failed: {}", e)
+                    });
+
+                    // Synthesise a proper tool-call exchange so the model
+                    // receives the result in the format it expects
+                    let call_id = "call_fallback_0";
+                    let args_json = serde_json::to_string(&json!({ "query": query }))
+                        .unwrap_or_default();
+
+                    messages.push(json!({
+                        "role": "assistant",
+                        "content": null,
+                        "tool_calls": [{
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": args_json
+                            }
+                        }]
+                    }));
+                    messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": result
+                    }));
+                    continue; // loop back to get the final answer
+                }
+            }
+        }
+
+        // ── Path C: genuine final answer (no tool call detected) ────────────
+        return Ok(content);
     }
 
     // Max rounds reached — final call without tools
