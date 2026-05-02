@@ -1,0 +1,168 @@
+Identified Ratatui tree widget solution and prepared example
+Identified Ratatui tree widget solution and prepared example
+tui-tree-widget crate — simplest way
+toml
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+tui-tree-widget = "0.22"
+1. Build the tree from filesystem
+rust
+use tui_tree_widget::{Tree, TreeItem, TreeState};
+use std::path::Path;
+
+fn build_tree<'a>(path: &Path) -> Vec<TreeItem<'a, String>> {
+    let mut items = vec![];
+
+    let Ok(entries) = std::fs::read_dir(path) else { return items };
+
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|e| {
+        // dirs first, then files
+        let is_dir = e.path().is_dir();
+        (!is_dir, e.file_name())
+    });
+
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path();
+
+        // skip hidden files (.git, node_modules, etc.)
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
+
+        if path.is_dir() {
+            let children = build_tree(&path);
+            let icon = " "; // nerd font folder icon
+            let item = TreeItem::new(
+                path.to_string_lossy().to_string(),
+                format!("{icon}{name}"),
+                children,
+            ).unwrap();
+            items.push(item);
+        } else {
+            let icon = file_icon(&name);
+            let item = TreeItem::new_leaf(
+                path.to_string_lossy().to_string(),
+                format!("{icon}{name}"),
+            );
+            items.push(item);
+        }
+    }
+    items
+}
+
+fn file_icon(name: &str) -> &'static str {
+    match name.rsplit('.').next().unwrap_or("") {
+        "rs"   => " ",
+        "toml" => " ",
+        "md"   => " ",
+        "json" => " ",
+        "js" | "ts" => " ",
+        "py"   => " ",
+        "html" => " ",
+        "css"  => " ",
+        _      => " ",
+    }
+}
+2. App state
+rust
+pub struct App<'a> {
+    pub tree_state: TreeState<String>,
+    pub tree_items: Vec<TreeItem<'a, String>>,
+    pub selected_file: Option<String>,
+    pub show_tree: bool,
+}
+
+impl<'a> App<'a> {
+    pub fn new(root: &Path) -> Self {
+        let tree_items = build_tree(root);
+        let mut tree_state = TreeState::default();
+        tree_state.select_first(&tree_items); // select first item on open
+        Self {
+            tree_state,
+            tree_items,
+            selected_file: None,
+            show_tree: true,
+        }
+    }
+}
+3. Render it
+rust
+use tui_tree_widget::Tree;
+use ratatui::widgets::{Block, BorderType};
+use ratatui::style::{Style, Modifier};
+
+fn render_tree(f: &mut Frame, app: &mut App, area: Rect) {
+    let tree = Tree::new(&app.tree_items)
+        .unwrap()
+        .block(
+            Block::bordered()
+                .title("  Explorer")
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(Color::Rgb(49, 50, 68)))
+                .bg(Color::Rgb(30, 30, 46)),
+        )
+        .highlight_style(
+            Style::new()
+                .fg(Color::Rgb(137, 180, 250))  // blue
+                .bg(Color::Rgb(49, 50, 68))      // surface
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("  "); // cursor indicator
+
+    f.render_stateful_widget(tree, area, &mut app.tree_state);
+}
+4. Key bindings
+rust
+// in your event loop
+KeyCode::Char('j') | KeyCode::Down  => {
+    app.tree_state.key_down();
+}
+KeyCode::Char('k') | KeyCode::Up    => {
+    app.tree_state.key_up();
+}
+KeyCode::Char('l') | KeyCode::Right => {
+    app.tree_state.key_right(); // expand dir
+}
+KeyCode::Char('h') | KeyCode::Left  => {
+    app.tree_state.key_left();  // collapse dir
+}
+KeyCode::Enter => {
+    // get selected identifier (the path string we used as key)
+    if let Some(selected) = app.tree_state.selected().last() {
+        let path = std::path::Path::new(selected);
+        if path.is_file() {
+            app.selected_file = Some(selected.clone());
+            // read file content → put in editor
+        }
+    }
+}
+KeyCode::Char('r') => {
+    // refresh tree
+    app.tree_items = build_tree(std::path::Path::new("."));
+}
+5. Toggle tree like <leader>e
+rust
+KeyCode::Char('e') if ctrl => {
+    app.show_tree = !app.show_tree;
+}
+
+// in layout
+let constraints = if app.show_tree {
+    vec![Constraint::Length(30), Constraint::Fill(1)]
+} else {
+    vec![Constraint::Length(0), Constraint::Fill(1)]
+};
+What it gives you
+╭─ Explorer ───────────────╮
+│  src                    │
+│ │   main.rs             │
+│ │   app.rs              │
+│ └   theme.rs            │
+│  Cargo.toml             │
+│  README.md              │
+╰──────────────────────────╯
+Dirs expand/collapse with h/l, navigate with j/k, open file with Enter. Same muscle memory as nvim-tree.
+
