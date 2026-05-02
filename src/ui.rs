@@ -1,192 +1,162 @@
-use crate::app::{App, InputMode, Mode};
+use crate::app::{App, InputMode, Mode, Overlay};
 use crate::markdown::md_to_text;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, BorderType, Padding, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-const BG: Color = Color::Rgb(22, 23, 35);
-const FG: Color = Color::Rgb(250, 250, 252);
-const CARD: Color = Color::Rgb(33, 34, 46);
-const SIDEBAR: Color = Color::Rgb(33, 34, 46);
-const MUTED_BG: Color = Color::Rgb(42, 43, 58);
-const MUTED_FG: Color = Color::Rgb(168, 170, 185);
-const PRIMARY: Color = Color::Rgb(75, 100, 220);
-const PRIMARY_FG: Color = Color::Rgb(235, 238, 255);
-const ACCENT: Color = Color::Rgb(80, 130, 230);
-const DESTRUCTIVE: Color = Color::Rgb(220, 80, 55);
-const BORDER: Color = Color::Rgb(50, 52, 68);
-const PLAN_COLOR: Color = Color::Rgb(80, 130, 230);
-const EDIT_COLOR: Color = Color::Rgb(100, 200, 150);
-const SUCCESS: Color = Color::Rgb(100, 200, 150);
+const BG: Color = Color::Rgb(0, 0, 0);
+const FG: Color = Color::Rgb(220, 220, 220);
+const MUTED: Color = Color::Rgb(100, 100, 100);
+const DIM: Color = Color::Rgb(60, 60, 60);
+const ACCENT: Color = Color::Rgb(100, 160, 255);
+const AMBER: Color = Color::Rgb(255, 180, 50);
+const GREEN: Color = Color::Rgb(80, 200, 120);
+const RED: Color = Color::Rgb(220, 80, 60);
+const OVERLAY_BG: Color = Color::Rgb(15, 15, 15);
+const OVERLAY_BORDER: Color = Color::Rgb(45, 45, 45);
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
 
-    f.render_widget(
-        Block::default().style(Style::default().bg(BG)),
-        area,
-    );
+    f.render_widget(Block::default().style(Style::default().bg(BG)), area);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-            Constraint::Length(1),
-        ])
-        .split(area);
+    if app.messages.is_empty() {
+        draw_welcome(f, app, area);
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(3)])
+            .split(area);
 
-    draw_header(f, app, chunks[0]);
-    draw_messages(f, app, chunks[1]);
-    draw_input(f, app, chunks[2]);
-    draw_statusbar(f, app, chunks[3]);
+        draw_messages(f, app, chunks[0]);
+        draw_input(f, app, chunks[1]);
+    }
+
+    if app.overlay == Overlay::CommandPalette {
+        draw_command_palette(f, app, area);
+    }
 }
 
-fn draw_header(f: &mut Frame, app: &App, area: Rect) {
-    let mode_color = match app.mode {
-        Mode::Plan => PLAN_COLOR,
-        Mode::Edit => EDIT_COLOR,
+fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
+    let center_y = area.height / 2;
+    let input_y = center_y.saturating_add(4).min(area.height.saturating_sub(6));
+
+    let title_area = Rect {
+        x: area.x,
+        y: area.y + center_y.saturating_sub(5),
+        width: area.width,
+        height: 3,
     };
 
-    let mode_icon = match app.mode {
-        Mode::Plan => "◆",
-        Mode::Edit => "◇",
+    let title_line = Line::from(vec![
+        Span::styled(
+            "AI",
+            Style::default().fg(FG).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Code",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    f.render_widget(
+        Paragraph::new(title_line).alignment(Alignment::Center),
+        title_area,
+    );
+
+    let provider_area = Rect {
+        x: area.x,
+        y: area.y + center_y.saturating_sub(2),
+        width: area.width,
+        height: 1,
     };
 
-    let provider_text = app
-        .provider_name
-        .as_deref()
-        .unwrap_or("No Provider");
-
-    let provider_color = if app.provider.is_some() {
-        SUCCESS
+    let (provider_text, pcolor) = if let Some(ref name) = app.provider_name {
+        (format!("{}", name), GREEN)
     } else {
-        MUTED_FG
+        ("no provider connected".to_string(), MUTED)
     };
 
-    let loading_indicator = if app.is_loading { " ⟳ " } else { "" };
-
-    let header_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(24),
-            Constraint::Min(1),
-            Constraint::Length(30),
-        ])
-        .split(area);
-
-    let mode_block = Paragraph::new(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(
-            mode_icon,
-            Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled(
-            format!("{} MODE", app.mode),
-            Style::default()
-                .fg(mode_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]))
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(mode_color))
-            .style(Style::default().bg(CARD)),
+    let mode_indicator = format!("{}  ·  {}", app.mode, provider_text);
+    f.render_widget(
+        Paragraph::new(Span::styled(mode_indicator, Style::default().fg(pcolor)))
+            .alignment(Alignment::Center),
+        provider_area,
     );
 
-    let title_block = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " AI Coding Agent",
-            Style::default()
-                .fg(PRIMARY_FG)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(loading_indicator, Style::default().fg(ACCENT)),
-    ]))
-    .alignment(Alignment::Center)
-    .block(
-        Block::default()
-            .borders(Borders::TOP | Borders::BOTTOM)
-            .border_style(Style::default().fg(BORDER))
-            .style(Style::default().bg(BG)),
+    let input_area = Rect {
+        x: area.x + area.width / 5,
+        y: area.y + input_y,
+        width: area.width * 3 / 5,
+        height: 3,
+    };
+
+    draw_input(f, app, input_area);
+
+    let hints_area = Rect {
+        x: area.x,
+        y: area.y + input_y + 4,
+        width: area.width,
+        height: 1,
+    };
+
+    let hints = Line::from(vec![
+        Span::styled("tab", Style::default().fg(MUTED)),
+        Span::styled("  agents  ", Style::default().fg(DIM)),
+        Span::styled("ctrl+k", Style::default().fg(MUTED)),
+        Span::styled("  commands", Style::default().fg(DIM)),
+    ]);
+    f.render_widget(
+        Paragraph::new(hints).alignment(Alignment::Center),
+        hints_area,
     );
 
-    let provider_block = Paragraph::new(Line::from(vec![
-        Span::styled(" Provider: ", Style::default().fg(MUTED_FG)),
-        Span::styled(
-            provider_text,
-            Style::default()
-                .fg(provider_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-    ]))
-    .alignment(Alignment::Right)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(BORDER))
-            .style(Style::default().bg(CARD)),
-    );
-
-    f.render_widget(mode_block, header_chunks[0]);
-    f.render_widget(title_block, header_chunks[1]);
-    f.render_widget(provider_block, header_chunks[2]);
+    if !app.status.is_empty() {
+        let status_area = Rect {
+            x: area.x,
+            y: area.y + input_y + 6,
+            width: area.width,
+            height: 1,
+        };
+        let status_color = if app.status.contains("connected") || app.status.contains("saved") || app.status.contains("copied") {
+            GREEN
+        } else if app.status.contains("failed") || app.status.contains("error") || app.status.contains("unknown") {
+            RED
+        } else {
+            AMBER
+        };
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("· {}", app.status), Style::default().fg(status_color)))
+                .alignment(Alignment::Center),
+            status_area,
+        );
+    }
 }
 
 fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER))
-        .padding(Padding::new(1, 1, 0, 0))
-        .style(Style::default().bg(BG));
-
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+    let content_area = Rect {
+        x: area.x + (area.width / 6).min(8),
+        y: area.y,
+        width: area.width - 2 * (area.width / 6).min(8),
+        height: area.height,
+    };
 
     let mut lines: Vec<Line> = Vec::new();
 
+    lines.push(Line::from(""));
+
     for (idx, msg) in app.messages.iter().enumerate() {
         match msg.role.as_str() {
-            "system" => {
-                lines.push(Line::from(vec![
-                    Span::styled("  ╔ ", Style::default().fg(MUTED_FG)),
-                    Span::styled(
-                        "System",
-                        Style::default().fg(MUTED_FG).add_modifier(Modifier::ITALIC),
-                    ),
-                ]));
-                for line in msg.content.lines() {
-                    lines.push(Line::from(vec![
-                        Span::styled("  ║ ", Style::default().fg(MUTED_BG)),
-                        Span::styled(line, Style::default().fg(MUTED_FG)),
-                    ]));
-                }
-                lines.push(Line::from(""));
-            }
             "user" => {
                 lines.push(Line::from(vec![
-                    Span::styled("  ╔ ", Style::default().fg(ACCENT)),
-                    Span::styled(
-                        "You",
-                        Style::default()
-                            .fg(ACCENT)
-                            .add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled("you  ", Style::default().fg(DIM)),
                 ]));
                 for line in msg.content.lines() {
                     lines.push(Line::from(vec![
-                        Span::styled("  ║ ", Style::default().fg(ACCENT)),
+                        Span::styled("     ", Style::default().fg(DIM)),
                         Span::styled(line, Style::default().fg(FG)),
                     ]));
                 }
@@ -194,44 +164,28 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
             }
             "assistant" => {
                 let is_focused = app.focused_msg == Some(idx);
-                let (gutter_color, label_extra) = if is_focused {
-                    (ACCENT, " ◀ focused")
-                } else {
-                    (PRIMARY, "")
-                };
+                let label_color = if is_focused { ACCENT } else { MUTED };
+                let label = if is_focused { "ai ◀" } else { "ai" };
+
                 lines.push(Line::from(vec![
-                    Span::styled("  ╔ ", Style::default().fg(gutter_color)),
                     Span::styled(
-                        "Assistant",
-                        Style::default()
-                            .fg(gutter_color)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        label_extra,
-                        Style::default().fg(ACCENT).add_modifier(Modifier::ITALIC),
+                        format!("{:<5}", label),
+                        Style::default().fg(label_color),
                     ),
                 ]));
-                let pipe_style = if is_focused {
-                    Style::default().fg(ACCENT)
-                } else {
-                    Style::default().fg(BORDER)
-                };
+
                 let md = md_to_text(&msg.content);
                 for md_line in md.lines {
-                    let mut prefixed_spans = vec![Span::styled("  ║ ", pipe_style)];
-                    prefixed_spans.extend(md_line.spans);
-                    lines.push(Line::from(prefixed_spans));
+                    let mut spans = vec![Span::styled("     ", Style::default().fg(DIM))];
+                    spans.extend(md_line.spans);
+                    lines.push(Line::from(spans));
                 }
                 lines.push(Line::from(""));
             }
             "error" => {
                 lines.push(Line::from(vec![
-                    Span::styled("  ✗ ", Style::default().fg(DESTRUCTIVE)),
-                    Span::styled(
-                        &msg.content,
-                        Style::default().fg(DESTRUCTIVE),
-                    ),
+                    Span::styled("err  ", Style::default().fg(RED)),
+                    Span::styled(&msg.content, Style::default().fg(RED)),
                 ]));
                 lines.push(Line::from(""));
             }
@@ -241,110 +195,240 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
 
     if app.is_loading {
         lines.push(Line::from(vec![
-            Span::styled("  ╔ ", Style::default().fg(PRIMARY)),
-            Span::styled(
-                "Assistant",
-                Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled("  ║ ", Style::default().fg(BORDER)),
-            Span::styled(
-                "Thinking...",
-                Style::default()
-                    .fg(MUTED_FG)
-                    .add_modifier(Modifier::ITALIC),
-            ),
+            Span::styled("ai   ", Style::default().fg(MUTED)),
+            Span::styled("thinking…", Style::default().fg(DIM).add_modifier(Modifier::ITALIC)),
         ]));
     }
 
-    let total_lines = lines.len();
-    let visible_height = inner.height as usize;
+    let total = lines.len();
+    let visible = content_area.height as usize;
 
     let scroll = if app.scroll == usize::MAX {
-        total_lines.saturating_sub(visible_height)
+        total.saturating_sub(visible)
     } else {
-        app.scroll.min(total_lines.saturating_sub(visible_height))
+        app.scroll.min(total.saturating_sub(visible))
     };
 
-    let paragraph = Paragraph::new(Text::from(lines))
+    let para = Paragraph::new(Text::from(lines))
         .scroll((scroll as u16, 0))
         .wrap(Wrap { trim: false });
 
-    f.render_widget(paragraph, inner);
+    f.render_widget(para, content_area);
+
+    draw_footer(f, app, area);
+}
+
+fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
+    if area.height < 4 {
+        return;
+    }
+
+    let footer_area = Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
+
+    let (status_text, status_color) = if !app.status.is_empty() {
+        let color = if app.status.contains("connected") || app.status.contains("saved") || app.status.contains("copied") {
+            GREEN
+        } else if app.status.contains("failed") || app.status.contains("error") || app.status.contains("unknown") {
+            RED
+        } else {
+            AMBER
+        };
+        (format!("· {}  ", app.status), color)
+    } else if let Some(ref name) = app.provider_name {
+        (format!("· {}  ", name), DIM)
+    } else {
+        (String::new(), DIM)
+    };
+
+    let mode_color = match app.mode {
+        Mode::Plan => ACCENT,
+        Mode::Edit => GREEN,
+    };
+
+    let footer = Line::from(vec![
+        Span::styled(format!(" {}  ", app.mode), Style::default().fg(mode_color)),
+        Span::styled(status_text, Style::default().fg(status_color)),
+        Span::styled("ctrl+k commands  ", Style::default().fg(DIM)),
+    ]);
+
+    f.render_widget(
+        Paragraph::new(footer).alignment(Alignment::Left),
+        footer_area,
+    );
 }
 
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let is_typing = app.input_mode == InputMode::Typing;
 
-    let (border_color, label, label_color) = if is_typing {
-        (PRIMARY, " ❯ ", PRIMARY)
+    let border_color = if is_typing { ACCENT } else { DIM };
+
+    let placeholder = if app.messages.is_empty() {
+        "Ask anything…  \"What is the tech stack of this project?\""
     } else {
-        (BORDER, " › ", MUTED_FG)
+        "Ask anything…"
     };
 
-    let display_text = if app.input.is_empty() && !is_typing {
-        Span::styled(
-            "Press [i] to type, [/] for commands, [p] Plan, [b] Edit, [q] Quit",
-            Style::default().fg(MUTED_FG).add_modifier(Modifier::ITALIC),
-        )
+    let display = if app.input.is_empty() && !is_typing {
+        Line::from(Span::styled(placeholder, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)))
     } else {
-        Span::styled(app.input.as_str(), Style::default().fg(FG))
+        Line::from(Span::styled(app.input.as_str(), Style::default().fg(FG)))
     };
 
-    let input_line = Line::from(vec![
-        Span::styled(label, Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
-        display_text,
+    let mode_color = match app.mode {
+        Mode::Plan => ACCENT,
+        Mode::Edit => GREEN,
+    };
+
+    let label = format!(" {}  ", app.mode);
+
+    let provider_info = if let Some(ref name) = app.provider_name {
+        format!(" {} ", name)
+    } else {
+        " no provider ".to_string()
+    };
+
+    let subtitle = Line::from(vec![
+        Span::styled(&label, Style::default().fg(mode_color).add_modifier(Modifier::BOLD)),
+        Span::styled("·", Style::default().fg(DIM)),
+        Span::styled(&provider_info, Style::default().fg(MUTED)),
+        Span::styled("·", Style::default().fg(DIM)),
+        Span::styled(" max", Style::default().fg(AMBER)),
     ]);
 
-    let input_widget = Paragraph::new(input_line).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(border_color))
-            .style(Style::default().bg(CARD)),
-    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(BG));
 
-    f.render_widget(input_widget, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let input_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(inner);
+
+    f.render_widget(Paragraph::new(display), input_chunks[0]);
+    f.render_widget(Paragraph::new(subtitle), input_chunks[1]);
 
     if is_typing {
-        let cursor_x = area.x + 1 + 3 + app.cursor_pos as u16;
-        let cursor_y = area.y + 1;
+        let cursor_x = inner.x + app.cursor_pos as u16;
+        let cursor_y = inner.y;
         f.set_cursor_position((cursor_x, cursor_y));
     }
 }
 
-fn draw_statusbar(f: &mut Frame, app: &App, area: Rect) {
-    let mode_color = match app.mode {
-        Mode::Plan => PLAN_COLOR,
-        Mode::Edit => EDIT_COLOR,
+fn draw_command_palette(f: &mut Frame, app: &App, area: Rect) {
+    let modal_w = (area.width * 2 / 3).max(50).min(area.width.saturating_sub(4));
+    let modal_h = 28u16.min(area.height.saturating_sub(4));
+    let modal_x = area.x + (area.width.saturating_sub(modal_w)) / 2;
+    let modal_y = area.y + (area.height.saturating_sub(modal_h)) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_w,
+        height: modal_h,
     };
 
-    let mode_hint = match app.mode {
-        Mode::Plan => " [b] → Edit ",
-        Mode::Edit => " [p] → Plan ",
+    f.render_widget(Clear, modal_area);
+    f.render_widget(
+        Block::default()
+            .style(Style::default().bg(OVERLAY_BG))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(OVERLAY_BORDER)),
+        modal_area,
+    );
+
+    let inner = Rect {
+        x: modal_area.x + 2,
+        y: modal_area.y + 1,
+        width: modal_area.width.saturating_sub(4),
+        height: modal_area.height.saturating_sub(2),
     };
 
-    let status_line = Line::from(vec![
-        Span::styled(
-            format!(" {} ", app.mode),
-            Style::default()
-                .fg(BG)
-                .bg(mode_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(mode_hint, Style::default().fg(MUTED_FG)),
-        Span::styled("│", Style::default().fg(BORDER)),
-        Span::styled(" [i] Type  [/] Cmd  [j/k] Navigate  [y] Copy  [s] Save  [q] Quit ", Style::default().fg(MUTED_FG)),
-        Span::styled("│", Style::default().fg(BORDER)),
-        Span::styled(
-            format!(" {} ", app.status),
-            Style::default().fg(MUTED_FG).add_modifier(Modifier::ITALIC),
-        ),
-    ]);
+    let entries: Vec<(&str, &str, &str)> = vec![
+        ("i", "start typing", "focus the input box"),
+        ("/", "command mode", "prefix for slash commands"),
+        ("enter", "send message", "send your message to the AI"),
+        ("esc", "normal mode / close", "exit typing or close this panel"),
+        ("p", "plan mode", "switch to planning mode"),
+        ("b", "edit / build mode", "switch to edit mode"),
+        ("j / ↓", "scroll down", "scroll chat or navigate responses"),
+        ("k / ↑", "scroll up", "scroll chat or navigate responses"),
+        ("y", "copy response", "copy last response to clipboard"),
+        ("s", "save response", "save last response to response_N.md"),
+        ("ctrl+k", "command palette", "open / close this panel"),
+        ("ctrl+c / q", "quit", "exit the application"),
+        ("", "", ""),
+        ("/connect cerebras <key>", "", "connect cerebras (gpt-oss-120b)"),
+        ("/connect cerebras <key> llama-3.3-70b", "", ""),
+        ("/connect anthropic <key>", "", "connect anthropic (claude-opus-4-5)"),
+        ("/connect codex <key>", "", "connect openai codex (gpt-4o)"),
+    ];
 
-    let statusbar = Paragraph::new(status_line)
-        .style(Style::default().bg(SIDEBAR));
+    let visible_h = inner.height as usize;
+    let scroll = app.palette_scroll.min(entries.len().saturating_sub(visible_h));
 
-    f.render_widget(statusbar, area);
+    let mut lines: Vec<Line> = vec![
+        Line::from(vec![
+            Span::styled("commands", Style::default().fg(FG).add_modifier(Modifier::BOLD)),
+            Span::styled("  ·  esc to close", Style::default().fg(DIM)),
+        ]),
+        Line::from(Span::styled("─".repeat(inner.width as usize), Style::default().fg(OVERLAY_BORDER))),
+    ];
+
+    for (key, label, desc) in &entries {
+        if key.is_empty() {
+            lines.push(Line::from(""));
+            continue;
+        }
+        if label.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {:<35}", key), Style::default().fg(MUTED)),
+                Span::styled(*desc, Style::default().fg(DIM)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {:<12}", key), Style::default().fg(ACCENT)),
+                Span::styled(format!("{:<22}", label), Style::default().fg(FG)),
+                Span::styled(*desc, Style::default().fg(DIM)),
+            ]));
+        }
+    }
+
+    let para = Paragraph::new(Text::from(lines))
+        .scroll((scroll as u16, 0))
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(para, inner);
+
+    if entries.len() > visible_h {
+        let scrollbar_area = Rect {
+            x: modal_area.x + modal_area.width.saturating_sub(2),
+            y: modal_area.y + 1,
+            width: 1,
+            height: modal_area.height.saturating_sub(2),
+        };
+        let ratio = scroll as f32 / entries.len().saturating_sub(visible_h).max(1) as f32;
+        let thumb_y = (ratio * scrollbar_area.height as f32) as u16;
+        for dy in 0..scrollbar_area.height {
+            let ch = if dy == thumb_y { "█" } else { "░" };
+            let row_area = Rect {
+                x: scrollbar_area.x,
+                y: scrollbar_area.y + dy,
+                width: 1,
+                height: 1,
+            };
+            f.render_widget(
+                Paragraph::new(Span::styled(ch, Style::default().fg(DIM))),
+                row_area,
+            );
+        }
+    }
 }

@@ -2,7 +2,7 @@ use crate::providers::{
     anthropic::AnthropicProvider, cerebras::CerebrasProvider, codex::CodexProvider, Message,
     Provider, ProviderType,
 };
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{backend::Backend, Terminal};
 use std::fs;
 use std::sync::Arc;
@@ -18,8 +18,8 @@ pub enum Mode {
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Mode::Plan => write!(f, "PLAN"),
-            Mode::Edit => write!(f, "EDIT"),
+            Mode::Plan => write!(f, "plan"),
+            Mode::Edit => write!(f, "edit"),
         }
     }
 }
@@ -28,6 +28,12 @@ impl std::fmt::Display for Mode {
 pub enum InputMode {
     Normal,
     Typing,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Overlay {
+    None,
+    CommandPalette,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +50,7 @@ pub enum AppEvent {
 pub struct App {
     pub mode: Mode,
     pub input_mode: InputMode,
+    pub overlay: Overlay,
     pub input: String,
     pub messages: Vec<ChatMessage>,
     pub provider: Option<Arc<dyn Provider>>,
@@ -56,30 +63,28 @@ pub struct App {
     pub cursor_pos: usize,
     pub save_count: usize,
     pub focused_msg: Option<usize>,
+    pub palette_scroll: usize,
 }
 
 impl App {
     pub fn new() -> Self {
-        let messages = vec![ChatMessage {
-            role: "system".to_string(),
-            content: "Welcome! Press [i] to start typing. Use [p] for Plan mode, [b] for Edit mode.\nType /connect <provider> <api-key> to connect a provider.\nAvailable providers: cerebras, anthropic, codex\n\nExample: /connect cerebras your-api-key-here\n\nType /help for all commands.".to_string(),
-        }];
-
         Self {
             mode: Mode::Plan,
             input_mode: InputMode::Normal,
+            overlay: Overlay::None,
             input: String::new(),
-            messages,
+            messages: vec![],
             provider: None,
             provider_name: None,
-            status: "No provider connected. Use /connect to get started.".to_string(),
+            status: String::new(),
             status_flash: None,
-            scroll: 0,
+            scroll: usize::MAX,
             is_loading: false,
             should_quit: false,
             cursor_pos: 0,
             save_count: 0,
             focused_msg: None,
+            palette_scroll: 0,
         }
     }
 
@@ -113,95 +118,145 @@ impl App {
                 }
             }
 
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.modifiers.contains(KeyModifiers::CONTROL)
-                        && key.code == KeyCode::Char('c')
-                    {
-                        break;
-                    }
-
-                    match self.input_mode {
-                        InputMode::Normal => match key.code {
-                            KeyCode::Char('q') => break,
-                            KeyCode::Char('p') => {
-                                self.mode = Mode::Plan;
-                                self.status = "Switched to Plan mode.".to_string();
+            if event::poll(Duration::from_millis(50))? {
+                match event::read()? {
+                    Event::Mouse(mouse) => {
+                        match mouse.kind {
+                            MouseEventKind::ScrollDown => {
+                                if self.overlay == Overlay::CommandPalette {
+                                    self.palette_scroll = self.palette_scroll.saturating_add(1);
+                                } else {
+                                    self.scroll_down(3);
+                                }
                             }
-                            KeyCode::Char('b') => {
-                                self.mode = Mode::Edit;
-                                self.status = "Switched to Edit mode.".to_string();
-                            }
-                            KeyCode::Char('i') => {
-                                self.input_mode = InputMode::Typing;
-                                self.cursor_pos = self.input.len();
-                            }
-                            KeyCode::Char('/') => {
-                                self.input_mode = InputMode::Typing;
-                                self.input = "/".to_string();
-                                self.cursor_pos = 1;
-                            }
-                            KeyCode::Char('s') => {
-                                self.save_last_response();
-                            }
-                            KeyCode::Char('y') => {
-                                self.yank_response();
-                            }
-                            KeyCode::Char('j') | KeyCode::Down => {
-                                self.focus_next();
-                            }
-                            KeyCode::Char('k') | KeyCode::Up => {
-                                self.focus_prev();
+                            MouseEventKind::ScrollUp => {
+                                if self.overlay == Overlay::CommandPalette {
+                                    self.palette_scroll = self.palette_scroll.saturating_sub(1);
+                                } else {
+                                    self.scroll_up(3);
+                                }
                             }
                             _ => {}
-                        },
-                        InputMode::Typing => match key.code {
-                            KeyCode::Esc => {
-                                self.input_mode = InputMode::Normal;
-                            }
-                            KeyCode::Enter => {
-                                let input = self.input.trim().to_string();
-                                if !input.is_empty() {
-                                    self.handle_input(input, tx.clone()).await;
+                        }
+                    }
+                    Event::Key(key) => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('c')
+                        {
+                            break;
+                        }
+
+                        if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('k')
+                        {
+                            self.overlay = if self.overlay == Overlay::CommandPalette {
+                                Overlay::None
+                            } else {
+                                self.palette_scroll = 0;
+                                Overlay::CommandPalette
+                            };
+                            continue;
+                        }
+
+                        if self.overlay == Overlay::CommandPalette {
+                            match key.code {
+                                KeyCode::Esc => {
+                                    self.overlay = Overlay::None;
                                 }
-                                self.input.clear();
-                                self.cursor_pos = 0;
-                                self.input_mode = InputMode::Normal;
-                            }
-                            KeyCode::Backspace => {
-                                if self.cursor_pos > 0 {
-                                    self.cursor_pos -= 1;
-                                    self.input.remove(self.cursor_pos);
+                                KeyCode::Down | KeyCode::Char('j') => {
+                                    self.palette_scroll = self.palette_scroll.saturating_add(1);
                                 }
-                            }
-                            KeyCode::Delete => {
-                                if self.cursor_pos < self.input.len() {
-                                    self.input.remove(self.cursor_pos);
+                                KeyCode::Up | KeyCode::Char('k') => {
+                                    self.palette_scroll = self.palette_scroll.saturating_sub(1);
                                 }
+                                _ => {}
                             }
-                            KeyCode::Left => {
-                                if self.cursor_pos > 0 {
-                                    self.cursor_pos -= 1;
+                            continue;
+                        }
+
+                        match self.input_mode {
+                            InputMode::Normal => match key.code {
+                                KeyCode::Char('q') => break,
+                                KeyCode::Char('p') => {
+                                    self.mode = Mode::Plan;
+                                    self.flash_status("plan mode".to_string());
                                 }
-                            }
-                            KeyCode::Right => {
-                                if self.cursor_pos < self.input.len() {
+                                KeyCode::Char('b') => {
+                                    self.mode = Mode::Edit;
+                                    self.flash_status("edit mode".to_string());
+                                }
+                                KeyCode::Char('i') => {
+                                    self.input_mode = InputMode::Typing;
+                                    self.cursor_pos = self.input.len();
+                                }
+                                KeyCode::Char('/') => {
+                                    self.input_mode = InputMode::Typing;
+                                    self.input = "/".to_string();
+                                    self.cursor_pos = 1;
+                                }
+                                KeyCode::Char('s') => {
+                                    self.save_last_response();
+                                }
+                                KeyCode::Char('y') => {
+                                    self.yank_response();
+                                }
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    self.scroll_down(3);
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    self.scroll_up(3);
+                                }
+                                _ => {}
+                            },
+                            InputMode::Typing => match key.code {
+                                KeyCode::Esc => {
+                                    self.input_mode = InputMode::Normal;
+                                }
+                                KeyCode::Enter => {
+                                    let input = self.input.trim().to_string();
+                                    if !input.is_empty() {
+                                        self.handle_input(input, tx.clone()).await;
+                                    }
+                                    self.input.clear();
+                                    self.cursor_pos = 0;
+                                    self.input_mode = InputMode::Normal;
+                                }
+                                KeyCode::Backspace => {
+                                    if self.cursor_pos > 0 {
+                                        self.cursor_pos -= 1;
+                                        self.input.remove(self.cursor_pos);
+                                    }
+                                }
+                                KeyCode::Delete => {
+                                    if self.cursor_pos < self.input.len() {
+                                        self.input.remove(self.cursor_pos);
+                                    }
+                                }
+                                KeyCode::Left => {
+                                    if self.cursor_pos > 0 {
+                                        self.cursor_pos -= 1;
+                                    }
+                                }
+                                KeyCode::Right => {
+                                    if self.cursor_pos < self.input.len() {
+                                        self.cursor_pos += 1;
+                                    }
+                                }
+                                KeyCode::Home => {
+                                    self.cursor_pos = 0;
+                                }
+                                KeyCode::End => {
+                                    self.cursor_pos = self.input.len();
+                                }
+                                KeyCode::Char(c) => {
+                                    self.input.insert(self.cursor_pos, c);
                                     self.cursor_pos += 1;
                                 }
-                            }
-                            KeyCode::Home => {
-                                self.cursor_pos = 0;
-                            }
-                            KeyCode::End => {
-                                self.cursor_pos = self.input.len();
-                            }
-                            KeyCode::Char(c) => {
-                                self.input.insert(self.cursor_pos, c);
-                                self.cursor_pos += 1;
-                            }
-                            _ => {}
-                        },
+                                _ => {}
+                            },
+                        }
                     }
+                    _ => {}
                 }
             }
 
@@ -213,6 +268,21 @@ impl App {
         Ok(())
     }
 
+    fn scroll_down(&mut self, amount: usize) {
+        if self.scroll == usize::MAX {
+            return;
+        }
+        self.scroll = self.scroll.saturating_add(amount);
+    }
+
+    fn scroll_up(&mut self, amount: usize) {
+        if self.scroll == usize::MAX {
+            self.scroll = 0;
+        } else {
+            self.scroll = self.scroll.saturating_sub(amount);
+        }
+    }
+
     fn save_last_response(&mut self) {
         let last = self
             .messages
@@ -222,80 +292,21 @@ impl App {
 
         match last {
             None => {
-                self.status = "No response to save yet.".to_string();
+                self.flash_status("no response to save yet".to_string());
             }
             Some(msg) => {
                 self.save_count += 1;
                 let filename = format!("response_{}.md", self.save_count);
-                match fs::write(&filename, &msg.content) {
+                let content = msg.content.clone();
+                match fs::write(&filename, &content) {
                     Ok(_) => {
-                        self.status = format!("Saved to {}  — open it in the file tree to copy.", filename);
-                        self.messages.push(ChatMessage {
-                            role: "system".to_string(),
-                            content: format!("Response saved to `{}`", filename),
-                        });
-                        self.scroll_to_bottom();
+                        self.flash_status(format!("saved → {}", filename));
                     }
                     Err(e) => {
-                        self.status = format!("Save failed: {}", e);
+                        self.flash_status(format!("save failed: {}", e));
                     }
                 }
             }
-        }
-    }
-
-    fn assistant_messages(&self) -> Vec<usize> {
-        self.messages
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.role == "assistant")
-            .map(|(i, _)| i)
-            .collect()
-    }
-
-    fn focus_next(&mut self) {
-        let indices = self.assistant_messages();
-        if indices.is_empty() {
-            return;
-        }
-        self.focused_msg = Some(match self.focused_msg {
-            None => *indices.last().unwrap(),
-            Some(cur) => {
-                let pos = indices.iter().position(|&i| i == cur).unwrap_or(0);
-                indices[(pos + 1).min(indices.len() - 1)]
-            }
-        });
-        self.flash_status(format!(
-            "Response {}/{} focused — [y] copy  [s] save",
-            self.focused_position(),
-            indices.len()
-        ));
-    }
-
-    fn focus_prev(&mut self) {
-        let indices = self.assistant_messages();
-        if indices.is_empty() {
-            return;
-        }
-        self.focused_msg = Some(match self.focused_msg {
-            None => *indices.last().unwrap(),
-            Some(cur) => {
-                let pos = indices.iter().position(|&i| i == cur).unwrap_or(0);
-                indices[pos.saturating_sub(1)]
-            }
-        });
-        self.flash_status(format!(
-            "Response {}/{} focused — [y] copy  [s] save",
-            self.focused_position(),
-            indices.len()
-        ));
-    }
-
-    fn focused_position(&self) -> usize {
-        let indices = self.assistant_messages();
-        match self.focused_msg {
-            None => 0,
-            Some(cur) => indices.iter().position(|&i| i == cur).unwrap_or(0) + 1,
         }
     }
 
@@ -311,7 +322,7 @@ impl App {
 
         let content = match idx {
             None => {
-                self.flash_status("No response to copy yet.".to_string());
+                self.flash_status("no response to copy yet".to_string());
                 return;
             }
             Some(i) => self.messages[i].content.clone(),
@@ -319,17 +330,14 @@ impl App {
 
         match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(content.clone())) {
             Ok(_) => {
-                self.flash_status("Copied to clipboard!".to_string());
+                self.flash_status("copied to clipboard".to_string());
             }
-            Err(e) => {
+            Err(_) => {
                 self.save_count += 1;
                 let filename = format!("response_{}.md", self.save_count);
                 match fs::write(&filename, &content) {
-                    Ok(_) => self.flash_status(format!(
-                        "Clipboard unavailable — saved to {} instead",
-                        filename
-                    )),
-                    Err(_) => self.flash_status(format!("Copy failed: {}", e)),
+                    Ok(_) => self.flash_status(format!("clipboard unavailable → saved to {}", filename)),
+                    Err(e) => self.flash_status(format!("copy failed: {}", e)),
                 }
             }
         }
@@ -344,11 +352,7 @@ impl App {
         if let Some(t) = self.status_flash {
             if t.elapsed() > Duration::from_secs(3) {
                 self.status_flash = None;
-                self.status = self
-                    .provider_name
-                    .as_deref()
-                    .map(|p| format!("Connected: {}", p))
-                    .unwrap_or_else(|| "No provider connected. Use /connect to get started.".to_string());
+                self.status = String::new();
             }
         }
     }
@@ -376,80 +380,42 @@ impl App {
                             api_key,
                             Some(model.clone()),
                         )));
-                        self.provider_name =
-                            Some(format!("Cerebras ({})", model));
-                        self.status = format!("Connected to Cerebras — {}", model);
-                        self.messages.push(ChatMessage {
-                            role: "system".to_string(),
-                            content: format!(
-                                "Connected to Cerebras! Model: {}. You can now start chatting!",
-                                model
-                            ),
-                        });
+                        self.provider_name = Some(format!("cerebras · {}", model));
+                        self.flash_status(format!("connected to cerebras ({})", model));
                     }
                     "anthropic" => {
                         self.provider = Some(Arc::new(AnthropicProvider::new(api_key)));
                         self.provider_name = Some(ProviderType::Anthropic.to_string());
-                        self.status = "Connected to Anthropic (claude-opus-4-5)".to_string();
-                        self.messages.push(ChatMessage {
-                            role: "system".to_string(),
-                            content: "Connected to Anthropic! Model: claude-opus-4-5. You can now start chatting!".to_string(),
-                        });
+                        self.flash_status("connected to anthropic (claude-opus-4-5)".to_string());
                     }
                     "codex" => {
                         self.provider = Some(Arc::new(CodexProvider::new(api_key)));
                         self.provider_name = Some(ProviderType::Codex.to_string());
-                        self.status = "Connected to Codex/OpenAI (gpt-4o)".to_string();
-                        self.messages.push(ChatMessage {
-                            role: "system".to_string(),
-                            content: "Connected to Codex! Model: gpt-4o. You can now start chatting!".to_string(),
-                        });
+                        self.flash_status("connected to codex (gpt-4o)".to_string());
                     }
                     other => {
-                        self.messages.push(ChatMessage {
-                            role: "error".to_string(),
-                            content: format!(
-                                "Unknown provider: '{}'. Available: cerebras, anthropic, codex",
-                                other
-                            ),
-                        });
+                        self.flash_status(format!("unknown provider: '{}'", other));
                     }
                 }
                 self.scroll_to_bottom();
             }
             ["/help"] => {
-                self.messages.push(ChatMessage {
-                    role: "system".to_string(),
-                    content: "Commands:\n  /connect <provider> <api-key> [model]  Connect a provider\n  /help                                  Show this help\n\nProviders:\n  cerebras   gpt-oss-120b (default), llama-3.3-70b, llama3.1-8b\n  anthropic  claude-opus-4-5\n  codex      gpt-4o (OpenAI)\n\nExamples:\n  /connect cerebras <key>\n  /connect cerebras <key> gpt-oss-120b\n  /connect cerebras <key> llama-3.3-70b\n\nKeybindings:\n  [p]    Switch to Plan mode\n  [b]    Switch to Edit/Build mode\n  [i]    Start typing a message\n  [/]    Start a slash command\n  [↑↓]   Scroll messages\n  [Esc]  Stop typing\n  [q]    Quit".to_string(),
-                });
-                self.scroll_to_bottom();
+                self.flash_status("press ctrl+k to see all commands".to_string());
             }
             _ => {
-                self.messages.push(ChatMessage {
-                    role: "error".to_string(),
-                    content: format!(
-                        "Unknown command: '{}'. Type /help for available commands.",
-                        input
-                    ),
-                });
-                self.scroll_to_bottom();
+                self.flash_status(format!("unknown command: '{}'", input));
             }
         }
     }
 
     async fn send_message(&mut self, content: String, tx: mpsc::Sender<AppEvent>) {
         if self.provider.is_none() {
-            self.messages.push(ChatMessage {
-                role: "error".to_string(),
-                content: "No provider connected. Use /connect <provider> <api-key> first."
-                    .to_string(),
-            });
-            self.scroll_to_bottom();
+            self.flash_status("no provider — use /connect <provider> <key>".to_string());
             return;
         }
 
         let mode_ctx = match self.mode {
-            Mode::Plan => "You are an AI coding assistant in PLAN mode. Help the user think through architecture, design decisions, and planning. Be structured and thorough. Use numbered lists and clear sections.",
+            Mode::Plan => "You are an AI coding assistant in PLAN mode. Help the user think through architecture, design decisions, and planning. Be structured and thorough.",
             Mode::Edit => "You are an AI coding assistant in EDIT mode. Help the user write, modify, and debug code. Be precise and always provide complete, working code.",
         };
 
