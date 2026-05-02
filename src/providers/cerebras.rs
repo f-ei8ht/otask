@@ -4,9 +4,9 @@ use reqwest::Client;
 use serde_json::json;
 
 pub struct CerebrasProvider {
-    api_key: String,
+    pub api_key: String,
+    pub model: String,
     client: Client,
-    model: String,
 }
 
 impl CerebrasProvider {
@@ -45,7 +45,7 @@ impl Provider for CerebrasProvider {
 
             if !response.status().is_success() {
                 let err_text = response.text().await?;
-                return Err(anyhow::anyhow!("Cerebras API error: {}", err_text));
+                return Err(anyhow::anyhow!("Cerebras error: {}", err_text));
             }
 
             let json: serde_json::Value = response.json().await?;

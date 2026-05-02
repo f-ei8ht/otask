@@ -1,5 +1,6 @@
 mod app;
 mod editor;
+mod exa;
 mod filetree;
 mod highlight;
 mod markdown;

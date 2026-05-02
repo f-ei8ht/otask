@@ -1,16 +1,16 @@
 use crate::editor::{EditorAction, EditorMode, EditorState};
+use crate::exa::{plan_chat, ExaClient};
 use crate::filetree::FileTree;
 use crate::highlight::Highlighter;
-use crate::providers::{
-    anthropic::AnthropicProvider, cerebras::CerebrasProvider, codex::CodexProvider, Message,
-    Provider, ProviderType,
-};
+use crate::providers::{cerebras::CerebrasProvider, Message, Provider};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{backend::Backend, Terminal};
 use std::fs;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+
+const DEFAULT_EXA_KEY: &str = "6717a103-1690-4180-a645-028950251c31";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -59,6 +59,9 @@ pub struct App {
     pub messages: Vec<ChatMessage>,
     pub provider: Option<Arc<dyn Provider>>,
     pub provider_name: Option<String>,
+    pub cerebras_key: Option<String>,
+    pub cerebras_model: Option<String>,
+    pub exa: Arc<ExaClient>,
     pub status: String,
     pub status_flash: Option<Instant>,
     pub scroll: usize,
@@ -85,6 +88,9 @@ impl App {
             messages: vec![],
             provider: None,
             provider_name: None,
+            cerebras_key: None,
+            cerebras_model: None,
+            exa: Arc::new(ExaClient::new(DEFAULT_EXA_KEY.to_string())),
             status: String::new(),
             status_flash: None,
             scroll: usize::MAX,
@@ -111,7 +117,6 @@ impl App {
         loop {
             self.tick_flash();
 
-            // rebuild syntax-highlight cache when content has changed
             if let Some(ref mut ed) = self.editor {
                 if ed.cache_dirty {
                     let ext = ed
@@ -180,7 +185,6 @@ impl App {
 
                         // ── Editor / tree active ─────────────────────────────
                         if self.editor.is_some() {
-                            // Ctrl+E toggles tree
                             if key.modifiers.contains(KeyModifiers::CONTROL)
                                 && key.code == KeyCode::Char('e')
                             {
@@ -194,7 +198,6 @@ impl App {
                                 continue;
                             }
 
-                            // Tab switches focus between tree and editor
                             if key.code == KeyCode::Tab {
                                 if self.tree.is_some() {
                                     self.tree_focused = !self.tree_focused;
@@ -202,7 +205,6 @@ impl App {
                                 continue;
                             }
 
-                            // Tree focus: tree navigation keys
                             if self.tree_focused {
                                 if let Some(ref mut tree) = self.tree {
                                     match key.code {
@@ -247,7 +249,6 @@ impl App {
                                 continue;
                             }
 
-                            // Editor focus: vim key handling
                             let action = self.handle_editor_key(key);
                             if action == EditorAction::Quit {
                                 self.editor = None;
@@ -335,7 +336,7 @@ impl App {
                                 KeyCode::Char('q') => break,
                                 KeyCode::Char('p') => {
                                     self.mode = Mode::Plan;
-                                    self.flash_status("plan mode".to_string());
+                                    self.flash_status("plan mode — web search enabled".to_string());
                                 }
                                 KeyCode::Char('e') => {
                                     self.mode = Mode::Edit;
@@ -427,7 +428,6 @@ impl App {
                     }
                     return EditorAction::None;
                 }
-
                 match key.code {
                     KeyCode::Char('h') | KeyCode::Left => ed.move_left(),
                     KeyCode::Char('j') | KeyCode::Down => ed.move_down(),
@@ -437,15 +437,8 @@ impl App {
                     KeyCode::Char('$') => ed.goto_line_end(),
                     KeyCode::Char('g') => ed.goto_first_line(),
                     KeyCode::Char('G') => ed.goto_last_line(),
-                    KeyCode::Char('i') => {
-                        ed.mode = EditorMode::Insert;
-                        ed.status_msg = None;
-                    }
-                    KeyCode::Char('a') => {
-                        ed.move_right();
-                        ed.mode = EditorMode::Insert;
-                        ed.status_msg = None;
-                    }
+                    KeyCode::Char('i') => { ed.mode = EditorMode::Insert; ed.status_msg = None; }
+                    KeyCode::Char('a') => { ed.move_right(); ed.mode = EditorMode::Insert; ed.status_msg = None; }
                     KeyCode::Char('o') => ed.open_line_below(),
                     KeyCode::Char('O') => ed.open_line_above(),
                     KeyCode::Char('d') => ed.pending_d = true,
@@ -459,14 +452,11 @@ impl App {
                 }
                 EditorAction::None
             }
-
             EditorMode::Insert => {
                 match key.code {
                     KeyCode::Esc => {
                         ed.mode = EditorMode::Normal;
-                        if ed.cursor_col > 0 {
-                            ed.cursor_col -= 1;
-                        }
+                        if ed.cursor_col > 0 { ed.cursor_col -= 1; }
                     }
                     KeyCode::Enter => ed.enter(),
                     KeyCode::Backspace => ed.backspace(),
@@ -482,13 +472,9 @@ impl App {
                 }
                 EditorAction::None
             }
-
             EditorMode::Command => {
                 match key.code {
-                    KeyCode::Esc => {
-                        ed.mode = EditorMode::Normal;
-                        ed.command_buf.clear();
-                    }
+                    KeyCode::Esc => { ed.mode = EditorMode::Normal; ed.command_buf.clear(); }
                     KeyCode::Enter => return ed.execute_command(),
                     KeyCode::Backspace => {
                         if ed.command_buf.is_empty() {
@@ -545,10 +531,7 @@ impl App {
                 .map(|(i, _)| i)
         });
         let content = match idx {
-            None => {
-                self.flash_status("no response to copy yet".to_string());
-                return;
-            }
+            None => { self.flash_status("no response to copy yet".to_string()); return; }
             Some(i) => self.messages[i].content.clone(),
         };
         match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(content.clone())) {
@@ -589,29 +572,26 @@ impl App {
     fn handle_command(&mut self, input: String) {
         let parts: Vec<&str> = input.splitn(4, ' ').collect();
         match parts.as_slice() {
-            ["/connect", provider, api_key] | ["/connect", provider, api_key, _] => {
+            ["/connect", "cerebras", api_key] | ["/connect", "cerebras", api_key, _] => {
                 let api_key = api_key.to_string();
-                let model_override: Option<String> = parts.get(3).map(|s| s.to_string());
-                match provider.to_lowercase().as_str() {
-                    "cerebras" => {
-                        let model = model_override.unwrap_or_else(|| "gpt-oss-120b".to_string());
-                        self.provider = Some(Arc::new(CerebrasProvider::new(api_key, Some(model.clone()))));
-                        self.provider_name = Some(format!("cerebras · {}", model));
-                        self.flash_status(format!("connected to cerebras ({})", model));
-                    }
-                    "anthropic" => {
-                        self.provider = Some(Arc::new(AnthropicProvider::new(api_key)));
-                        self.provider_name = Some(ProviderType::Anthropic.to_string());
-                        self.flash_status("connected to anthropic (claude-opus-4-5)".to_string());
-                    }
-                    "codex" => {
-                        self.provider = Some(Arc::new(CodexProvider::new(api_key)));
-                        self.provider_name = Some(ProviderType::Codex.to_string());
-                        self.flash_status("connected to codex (gpt-4o)".to_string());
-                    }
-                    other => self.flash_status(format!("unknown provider: '{}'", other)),
-                }
+                let model = parts.get(3).map(|s| s.to_string()).unwrap_or_else(|| "gpt-oss-120b".to_string());
+                let provider = Arc::new(CerebrasProvider::new(api_key.clone(), Some(model.clone())));
+                self.provider = Some(provider);
+                self.cerebras_key = Some(api_key);
+                self.cerebras_model = Some(model.clone());
+                self.provider_name = Some(format!("cerebras · {}", model));
+                self.flash_status(format!("connected to cerebras ({})", model));
                 self.scroll_to_bottom();
+            }
+            ["/connect", other, ..] => {
+                self.flash_status(format!("unknown provider '{}' — only cerebras is supported", other));
+            }
+            ["/connect"] => {
+                self.flash_status("usage: /connect cerebras <api_key> [model]".to_string());
+            }
+            ["/exa", key] => {
+                self.exa = Arc::new(ExaClient::new(key.to_string()));
+                self.flash_status("exa api key updated".to_string());
             }
             ["/new"] => self.new_session(),
             ["/edit"] => {
@@ -631,31 +611,58 @@ impl App {
 
     async fn send_message(&mut self, content: String, tx: mpsc::Sender<AppEvent>) {
         if self.provider.is_none() {
-            self.flash_status("no provider — use /connect <provider> <key>".to_string());
+            self.flash_status("no provider — use /connect cerebras <key>".to_string());
             return;
         }
-        let mode_ctx = match self.mode {
-            Mode::Plan => "You are an AI coding assistant in PLAN mode. Help the user think through architecture, design decisions, and planning. Be structured and thorough.",
-            Mode::Edit => "You are an AI coding assistant in EDIT mode. Help the user write, modify, and debug code. Be precise and always provide complete, working code.",
-        };
+
         self.messages.push(ChatMessage { role: "user".to_string(), content: content.clone() });
         self.scroll_to_bottom();
         self.is_loading = true;
 
-        let history: Vec<Message> = self
-            .messages
+        let history: Vec<Message> = self.messages
             .iter()
             .filter(|m| m.role == "user" || m.role == "assistant")
             .map(|m| Message { role: m.role.clone(), content: m.content.clone() })
             .collect();
+
+        // Plan mode: use Exa web search tool calling loop
+        if self.mode == Mode::Plan {
+            if let (Some(ck), Some(cm)) = (self.cerebras_key.clone(), self.cerebras_model.clone()) {
+                let exa_key = self.exa.api_key.clone();
+
+                let system_msg = serde_json::json!({
+                    "role": "system",
+                    "content": "You are an expert AI coding assistant in PLAN mode. You have access to real-time web search. Use it proactively to find the latest documentation, library versions, benchmarks, architecture patterns, and best practices. Always search before making recommendations that depend on current or evolving information. Be structured and thorough in your planning responses."
+                });
+
+                let mut json_msgs = vec![system_msg];
+                for m in &history {
+                    json_msgs.push(serde_json::json!({
+                        "role": m.role,
+                        "content": m.content
+                    }));
+                }
+
+                tokio::spawn(async move {
+                    match plan_chat(ck, cm, json_msgs, exa_key).await {
+                        Ok(r) => { let _ = tx.send(AppEvent::Response(r)).await; }
+                        Err(e) => { let _ = tx.send(AppEvent::Error(e.to_string())).await; }
+                    }
+                });
+                return;
+            }
+        }
+
+        // Edit mode: simple chat, no web search
+        let mode_ctx = "You are an expert AI coding assistant in EDIT mode. Help the user write, modify, and debug code. Be precise and always provide complete, working code.";
         let mut messages = vec![Message { role: "system".to_string(), content: mode_ctx.to_string() }];
         messages.extend(history);
 
         let provider = Arc::clone(self.provider.as_ref().unwrap());
         tokio::spawn(async move {
             match provider.chat(messages).await {
-                Ok(response) => { let _ = tx.send(AppEvent::Response(response)).await; }
-                Err(err) => { let _ = tx.send(AppEvent::Error(err.to_string())).await; }
+                Ok(r) => { let _ = tx.send(AppEvent::Response(r)).await; }
+                Err(e) => { let _ = tx.send(AppEvent::Error(e.to_string())).await; }
             }
         });
     }
