@@ -258,18 +258,42 @@ fn draw_editor_content(f: &mut Frame, ed: &crate::editor::EditorState, area: Rec
         gutter_area,
     );
 
-    // Content
+    // Content — use syntax-highlighted cache when available, fallback to plain
     let tw = text_area.width as usize;
     let mut content_lines: Vec<Line> = Vec::new();
     for i in 0..visible_h {
         let li = scroll + i;
         if li < ed.lines.len() {
-            let text = &ed.lines[li];
             let bg = if li == ed.cursor_row { CURSOR_LINE } else { BG };
-            content_lines.push(Line::from(Span::styled(
-                format!("{:<width$}", text, width = tw),
-                Style::default().fg(FG).bg(bg),
-            )));
+            let line = if li < ed.highlight_cache.len() {
+                // re-apply bg color to every span so cursor-line bg shows
+                let spans: Vec<Span<'static>> = ed.highlight_cache[li]
+                    .spans
+                    .iter()
+                    .map(|s| {
+                        Span::styled(
+                            s.content.clone(),
+                            s.style.bg(bg),
+                        )
+                    })
+                    .collect();
+                // pad to full width so bg fills the row
+                let used: usize = spans.iter().map(|s| s.content.len()).sum();
+                let mut padded = spans;
+                if used < tw {
+                    padded.push(Span::styled(
+                        " ".repeat(tw - used),
+                        Style::default().bg(bg),
+                    ));
+                }
+                Line::from(padded)
+            } else {
+                Line::from(Span::styled(
+                    format!("{:<width$}", ed.lines[li], width = tw),
+                    Style::default().fg(FG).bg(bg),
+                ))
+            };
+            content_lines.push(line);
         } else {
             content_lines.push(Line::from(""));
         }

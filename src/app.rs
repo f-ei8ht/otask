@@ -1,5 +1,6 @@
 use crate::editor::{EditorAction, EditorMode, EditorState};
 use crate::filetree::FileTree;
+use crate::highlight::Highlighter;
 use crate::providers::{
     anthropic::AnthropicProvider, cerebras::CerebrasProvider, codex::CodexProvider, Message,
     Provider, ProviderType,
@@ -71,6 +72,7 @@ pub struct App {
     pub file_open_buf: String,
     pub tree: Option<FileTree>,
     pub tree_focused: bool,
+    pub highlighter: Highlighter,
 }
 
 impl App {
@@ -96,6 +98,7 @@ impl App {
             file_open_buf: String::new(),
             tree: None,
             tree_focused: false,
+            highlighter: Highlighter::new(),
         }
     }
 
@@ -107,6 +110,22 @@ impl App {
 
         loop {
             self.tick_flash();
+
+            // rebuild syntax-highlight cache when content has changed
+            if let Some(ref mut ed) = self.editor {
+                if ed.cache_dirty {
+                    let ext = ed
+                        .file_path
+                        .as_deref()
+                        .and_then(|p| p.rsplit('.').next())
+                        .unwrap_or("txt")
+                        .to_string();
+                    let content = ed.lines.join("\n");
+                    ed.highlight_cache = self.highlighter.highlight_file(&content, &ext);
+                    ed.cache_dirty = false;
+                }
+            }
+
             terminal.draw(|f| crate::ui::draw(f, self))?;
 
             while let Ok(evt) = rx.try_recv() {

@@ -18,6 +18,8 @@ pub struct EditorState {
     pub command_buf: String,
     pub status_msg: Option<String>,
     pub pending_d: bool,
+    pub highlight_cache: Vec<ratatui::text::Line<'static>>,
+    pub cache_dirty: bool,
 }
 
 impl EditorState {
@@ -45,6 +47,8 @@ impl EditorState {
             command_buf: String::new(),
             status_msg: None,
             pending_d: false,
+            highlight_cache: Vec::new(),
+            cache_dirty: true,
         }
     }
 
@@ -118,6 +122,7 @@ impl EditorState {
         self.lines[self.cursor_row].insert(col, c);
         self.cursor_col += 1;
         self.dirty = true;
+        self.cache_dirty = true;
     }
 
     pub fn backspace(&mut self) {
@@ -125,12 +130,14 @@ impl EditorState {
             self.cursor_col -= 1;
             self.lines[self.cursor_row].remove(self.cursor_col);
             self.dirty = true;
+            self.cache_dirty = true;
         } else if self.cursor_row > 0 {
             let current = self.lines.remove(self.cursor_row);
             self.cursor_row -= 1;
             self.cursor_col = self.lines[self.cursor_row].len();
             self.lines[self.cursor_row].push_str(&current);
             self.dirty = true;
+            self.cache_dirty = true;
         }
     }
 
@@ -139,10 +146,12 @@ impl EditorState {
         if self.cursor_col < line_len {
             self.lines[self.cursor_row].remove(self.cursor_col);
             self.dirty = true;
+            self.cache_dirty = true;
         } else if self.cursor_row + 1 < self.lines.len() {
             let next = self.lines.remove(self.cursor_row + 1);
             self.lines[self.cursor_row].push_str(&next);
             self.dirty = true;
+            self.cache_dirty = true;
         }
     }
 
@@ -152,6 +161,7 @@ impl EditorState {
         self.cursor_row += 1;
         self.cursor_col = 0;
         self.dirty = true;
+        self.cache_dirty = true;
     }
 
     pub fn delete_line(&mut self) {
@@ -166,6 +176,7 @@ impl EditorState {
         }
         self.clamp_col();
         self.dirty = true;
+        self.cache_dirty = true;
     }
 
     pub fn open_line_below(&mut self) {
@@ -174,6 +185,7 @@ impl EditorState {
         self.cursor_col = 0;
         self.mode = EditorMode::Insert;
         self.dirty = true;
+        self.cache_dirty = true;
     }
 
     pub fn open_line_above(&mut self) {
@@ -181,6 +193,7 @@ impl EditorState {
         self.cursor_col = 0;
         self.mode = EditorMode::Insert;
         self.dirty = true;
+        self.cache_dirty = true;
     }
 
     #[allow(dead_code)]

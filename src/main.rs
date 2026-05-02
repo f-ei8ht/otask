@@ -1,6 +1,7 @@
 mod app;
 mod editor;
 mod filetree;
+mod highlight;
 mod markdown;
 mod providers;
 mod ui;
