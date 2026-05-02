@@ -158,6 +158,13 @@ impl App {
                             continue;
                         }
 
+                        if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('n')
+                        {
+                            self.new_session();
+                            continue;
+                        }
+
                         if self.overlay == Overlay::CommandPalette {
                             match key.code {
                                 KeyCode::Esc => {
@@ -399,6 +406,9 @@ impl App {
                 }
                 self.scroll_to_bottom();
             }
+            ["/new"] => {
+                self.new_session();
+            }
             ["/help"] => {
                 self.flash_status("press ctrl+k to see all commands".to_string());
             }
@@ -454,6 +464,18 @@ impl App {
                 }
             }
         });
+    }
+
+    fn new_session(&mut self) {
+        self.messages.clear();
+        self.input.clear();
+        self.cursor_pos = 0;
+        self.scroll = usize::MAX;
+        self.focused_msg = None;
+        self.is_loading = false;
+        self.input_mode = InputMode::Normal;
+        self.overlay = Overlay::None;
+        self.flash_status("new session started".to_string());
     }
 
     fn scroll_to_bottom(&mut self) {

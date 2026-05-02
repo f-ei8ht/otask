@@ -373,6 +373,7 @@ fn draw_command_palette(f: &mut Frame, app: &App, area: Rect) {
         ("k / ↑", "scroll up", "scroll chat or navigate responses"),
         ("y", "copy response", "copy last response to clipboard"),
         ("s", "save response", "save last response to response_N.md"),
+        ("ctrl+n / /new", "new session", "clear chat, keep provider"),
         ("ctrl+k", "command palette", "open / close this panel"),
         ("ctrl+c / q", "quit", "exit the application"),
         ("", "", ""),
