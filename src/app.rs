@@ -210,18 +210,29 @@ impl App {
     }
 
     fn handle_command(&mut self, input: String) {
-        let parts: Vec<&str> = input.splitn(3, ' ').collect();
+        let parts: Vec<&str> = input.splitn(4, ' ').collect();
         match parts.as_slice() {
-            ["/connect", provider, api_key] => {
+            ["/connect", provider, api_key] | ["/connect", provider, api_key, _] => {
                 let api_key = api_key.to_string();
+                let model_override: Option<String> = parts.get(3).map(|s| s.to_string());
+
                 match provider.to_lowercase().as_str() {
                     "cerebras" => {
-                        self.provider = Some(Arc::new(CerebrasProvider::new(api_key)));
-                        self.provider_name = Some(ProviderType::Cerebras.to_string());
-                        self.status = "Connected to Cerebras (llama-3.3-70b)".to_string();
+                        let model = model_override
+                            .unwrap_or_else(|| "gpt-oss-120b".to_string());
+                        self.provider = Some(Arc::new(CerebrasProvider::new(
+                            api_key,
+                            Some(model.clone()),
+                        )));
+                        self.provider_name =
+                            Some(format!("Cerebras ({})", model));
+                        self.status = format!("Connected to Cerebras — {}", model);
                         self.messages.push(ChatMessage {
                             role: "system".to_string(),
-                            content: "Connected to Cerebras! Model: llama-3.3-70b. You can now start chatting!".to_string(),
+                            content: format!(
+                                "Connected to Cerebras! Model: {}. You can now start chatting!",
+                                model
+                            ),
                         });
                     }
                     "anthropic" => {
@@ -257,7 +268,7 @@ impl App {
             ["/help"] => {
                 self.messages.push(ChatMessage {
                     role: "system".to_string(),
-                    content: "Commands:\n  /connect <provider> <api-key>  Connect a provider\n  /help                          Show this help\n\nProviders:\n  cerebras   llama-3.3-70b (fast)\n  anthropic  claude-opus-4-5\n  codex      gpt-4o (OpenAI)\n\nKeybindings:\n  [p]    Switch to Plan mode\n  [b]    Switch to Edit/Build mode\n  [i]    Start typing a message\n  [/]    Start a slash command\n  [↑↓]   Scroll messages\n  [Esc]  Stop typing\n  [q]    Quit".to_string(),
+                    content: "Commands:\n  /connect <provider> <api-key> [model]  Connect a provider\n  /help                                  Show this help\n\nProviders:\n  cerebras   gpt-oss-120b (default), llama-3.3-70b, llama3.1-8b\n  anthropic  claude-opus-4-5\n  codex      gpt-4o (OpenAI)\n\nExamples:\n  /connect cerebras <key>\n  /connect cerebras <key> gpt-oss-120b\n  /connect cerebras <key> llama-3.3-70b\n\nKeybindings:\n  [p]    Switch to Plan mode\n  [b]    Switch to Edit/Build mode\n  [i]    Start typing a message\n  [/]    Start a slash command\n  [↑↓]   Scroll messages\n  [Esc]  Stop typing\n  [q]    Quit".to_string(),
                 });
                 self.scroll_to_bottom();
             }

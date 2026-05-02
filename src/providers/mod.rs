@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderType {
-    Cerebras,
     Anthropic,
     Codex,
 }
@@ -15,7 +14,6 @@ pub enum ProviderType {
 impl std::fmt::Display for ProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProviderType::Cerebras => write!(f, "Cerebras"),
             ProviderType::Anthropic => write!(f, "Anthropic"),
             ProviderType::Codex => write!(f, "Codex"),
         }

@@ -10,11 +10,11 @@ pub struct CerebrasProvider {
 }
 
 impl CerebrasProvider {
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: String, model: Option<String>) -> Self {
         Self {
             api_key,
             client: Client::new(),
-            model: "llama-3.3-70b".to_string(),
+            model: model.unwrap_or_else(|| "gpt-oss-120b".to_string()),
         }
     }
 }
