@@ -75,6 +75,9 @@ pub struct App {
     pub tree: Option<FileTree>,
     pub tree_focused: bool,
     pub highlighter: Highlighter,
+    /// Last known "bottom" scroll offset, set by the renderer each frame.
+    /// Allows scroll_up to move smoothly from the bottom instead of jumping to top.
+    pub bottom_hint: std::cell::Cell<usize>,
 }
 
 impl App {
@@ -106,6 +109,7 @@ impl App {
             tree: None,
             tree_focused: false,
             highlighter: Highlighter::new(),
+            bottom_hint: std::cell::Cell::new(0),
         }
     }
 
@@ -493,17 +497,21 @@ impl App {
     }
 
     fn scroll_down(&mut self, amount: usize) {
-        if self.scroll != usize::MAX {
-            self.scroll = self.scroll.saturating_add(amount);
-        }
+        let from = if self.scroll == usize::MAX {
+            self.bottom_hint.get()
+        } else {
+            self.scroll
+        };
+        self.scroll = from.saturating_add(amount);
     }
 
     fn scroll_up(&mut self, amount: usize) {
-        if self.scroll == usize::MAX {
-            self.scroll = 0;
+        let from = if self.scroll == usize::MAX {
+            self.bottom_hint.get()
         } else {
-            self.scroll = self.scroll.saturating_sub(amount);
-        }
+            self.scroll
+        };
+        self.scroll = from.saturating_sub(amount);
     }
 
     fn save_last_response(&mut self) {

@@ -554,10 +554,15 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
 
     let total = lines.len();
     let visible = content_area.height as usize;
+    let bottom = total.saturating_sub(visible);
+
+    // Persist bottom position so scroll_up can move smoothly from the bottom
+    app.bottom_hint.set(bottom);
+
     let scroll = if app.scroll == usize::MAX {
-        total.saturating_sub(visible)
+        bottom
     } else {
-        app.scroll.min(total.saturating_sub(visible))
+        app.scroll.min(bottom)
     };
 
     f.render_widget(
