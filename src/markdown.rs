@@ -32,9 +32,8 @@ pub fn md_to_text(md: &str) -> Text<'static> {
                 let text = t.into_string();
                 if in_code_block {
                     for line in text.lines() {
-                        let prefix = format!("  {}", line);
                         lines.push(Line::from(vec![Span::styled(
-                            prefix,
+                            format!("  {}", line),
                             Style::default().fg(CODE_FG).bg(CODE_BG),
                         )]));
                     }
@@ -51,7 +50,6 @@ pub fn md_to_text(md: &str) -> Text<'static> {
             }
 
             Event::Start(Tag::Heading { level, .. }) => {
-                heading_level = Some(level);
                 style = match level {
                     HeadingLevel::H1 => Style::default()
                         .fg(HEADING1)
@@ -78,7 +76,6 @@ pub fn md_to_text(md: &str) -> Text<'static> {
                     lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
                 }
                 lines.push(Line::raw(""));
-                heading_level = None;
                 style = Style::default().fg(FG);
             }
 
@@ -121,11 +118,7 @@ pub fn md_to_text(md: &str) -> Text<'static> {
 
             Event::Start(Tag::List(start)) => {
                 list_depth += 1;
-                if let Some(n) = start {
-                    ordered_counters.push(n);
-                } else {
-                    ordered_counters.push(0);
-                }
+                ordered_counters.push(start.unwrap_or(0));
                 indent_prefix = "  ".repeat(list_depth - 1);
             }
             Event::End(TagEnd::List(_)) => {
@@ -177,10 +170,10 @@ pub fn md_to_text(md: &str) -> Text<'static> {
             }
 
             Event::Start(Tag::Link { dest_url, title, .. }) => {
-                let label = if title.is_empty() {
-                    dest_url.to_string()
-                } else {
+                let label = if !title.is_empty() {
                     title.to_string()
+                } else {
+                    dest_url.to_string()
                 };
                 current.push(Span::styled(
                     format!("[{}]", label),
