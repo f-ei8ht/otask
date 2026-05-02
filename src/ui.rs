@@ -367,7 +367,7 @@ fn draw_command_palette(f: &mut Frame, app: &App, area: Rect) {
         ("ctrl+c / q", "quit", "exit the application"),
         ("", "", ""),
         ("/connect cerebras <key>", "", "connect cerebras (gpt-oss-120b)"),
-        ("/connect cerebras <key> llama-3.3-70b", "", ""),
+        ("/connect cerebras <key> llama3.1-8b", "", ""),
         ("/connect anthropic <key>", "", "connect anthropic (claude-opus-4-5)"),
         ("/connect codex <key>", "", "connect openai codex (gpt-4o)"),
     ];
