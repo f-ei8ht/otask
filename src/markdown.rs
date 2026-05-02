@@ -1,4 +1,4 @@
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
@@ -24,7 +24,6 @@ pub fn md_to_text(md: &str) -> Text<'static> {
     let mut list_depth: usize = 0;
     let mut ordered_counters: Vec<u64> = vec![];
     let mut in_code_block = false;
-    let mut heading_level: Option<HeadingLevel> = None;
     let mut indent_prefix = String::new();
 
     for event in parser {
@@ -169,7 +168,7 @@ pub fn md_to_text(md: &str) -> Text<'static> {
                     Style::default().fg(LIST_BULLET),
                 ));
             }
-            Event::End(TagEnd::BlockQuote(_)) => {
+            Event::End(TagEnd::BlockQuote) => {
                 if !current.is_empty() {
                     lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
                 }

@@ -1,4 +1,5 @@
 use crate::app::{App, InputMode, Mode};
+use crate::markdown::md_to_text;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -201,11 +202,13 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]));
-                for line in msg.content.lines() {
-                    lines.push(Line::from(vec![
+                let md = md_to_text(&msg.content);
+                for md_line in md.lines {
+                    let mut prefixed_spans = vec![
                         Span::styled("  ║ ", Style::default().fg(BORDER)),
-                        Span::styled(line, Style::default().fg(FG)),
-                    ]));
+                    ];
+                    prefixed_spans.extend(md_line.spans);
+                    lines.push(Line::from(prefixed_spans));
                 }
                 lines.push(Line::from(""));
             }
