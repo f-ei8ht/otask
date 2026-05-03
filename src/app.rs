@@ -34,12 +34,20 @@ pub enum InputMode {
     Typing,
 }
 
+pub const MODELS: &[(&str, &str)] = &[
+    ("zai-glm-4.7",                      "GLM-4.7  ·  ZhipuAI"),
+    ("qwen-3-235b-a22b-instruct-2507",   "Qwen-3 235B  ·  Alibaba"),
+    ("gpt-oss-120b",                     "GPT-OSS 120B  ·  default"),
+    ("llama3.1-8b",                      "Llama 3.1 8B  ·  Meta"),
+];
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Overlay {
     None,
     CommandPalette,
     FileOpen,
     FilePicker,
+    ModelPicker,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +95,8 @@ pub struct App {
     pub picker: Option<FilePicker>,
     /// Files attached via @ mention — contents injected into next message.
     pub attached_files: Vec<String>,
+    /// Selected row in the model picker overlay.
+    pub model_picker_idx: usize,
 }
 
 impl App {
@@ -125,6 +135,7 @@ impl App {
             bottom_hint: std::cell::Cell::new(0),
             picker: None,
             attached_files: vec![],
+            model_picker_idx: 2, // default = gpt-oss-120b (index 2)
         }
     }
 
@@ -301,6 +312,37 @@ impl App {
                                 }
                                 KeyCode::Char(c) => {
                                     self.file_open_buf.push(c);
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        // ── Model picker overlay ─────────────────────────────
+                        if self.overlay == Overlay::ModelPicker {
+                            match key.code {
+                                KeyCode::Esc => self.overlay = Overlay::None,
+                                KeyCode::Up | KeyCode::Char('k') => {
+                                    if self.model_picker_idx > 0 {
+                                        self.model_picker_idx -= 1;
+                                    }
+                                }
+                                KeyCode::Down | KeyCode::Char('j') => {
+                                    if self.model_picker_idx + 1 < MODELS.len() {
+                                        self.model_picker_idx += 1;
+                                    }
+                                }
+                                KeyCode::Enter => {
+                                    let (model_id, _) = MODELS[self.model_picker_idx];
+                                    let model = model_id.to_string();
+                                    self.cerebras_model = Some(model.clone());
+                                    if let Some(key) = self.cerebras_key.clone() {
+                                        let provider = Arc::new(CerebrasProvider::new(key, Some(model.clone())));
+                                        self.provider = Some(provider);
+                                    }
+                                    self.provider_name = self.cerebras_key.as_ref().map(|_| format!("cerebras · {}", model));
+                                    self.flash_status(format!("model → {}", model));
+                                    self.overlay = Overlay::None;
                                 }
                                 _ => {}
                             }
@@ -651,22 +693,31 @@ impl App {
     fn handle_command(&mut self, input: String) {
         let parts: Vec<&str> = input.splitn(4, ' ').collect();
         match parts.as_slice() {
-            ["/connect", "cerebras", api_key] | ["/connect", "cerebras", api_key, _] => {
+            ["/connect", "cerebras", api_key] => {
                 let api_key = api_key.to_string();
-                let model = parts.get(3).map(|s| s.to_string()).unwrap_or_else(|| "gpt-oss-120b".to_string());
+                let model = self.cerebras_model.clone().unwrap_or_else(|| "gpt-oss-120b".to_string());
                 let provider = Arc::new(CerebrasProvider::new(api_key.clone(), Some(model.clone())));
                 self.provider = Some(provider);
                 self.cerebras_key = Some(api_key);
                 self.cerebras_model = Some(model.clone());
                 self.provider_name = Some(format!("cerebras · {}", model));
-                self.flash_status(format!("connected to cerebras ({})", model));
+                self.flash_status(format!("connected · {} — use /models to switch model", model));
                 self.scroll_to_bottom();
             }
             ["/connect", other, ..] => {
                 self.flash_status(format!("unknown provider '{}' — only cerebras is supported", other));
             }
             ["/connect"] => {
-                self.flash_status("usage: /connect cerebras <api_key> [model]".to_string());
+                self.flash_status("usage: /connect cerebras <api_key>".to_string());
+            }
+            ["/models"] | ["/model"] => {
+                // sync picker index to current model
+                if let Some(ref cm) = self.cerebras_model {
+                    if let Some(idx) = MODELS.iter().position(|(id, _)| id == cm) {
+                        self.model_picker_idx = idx;
+                    }
+                }
+                self.overlay = Overlay::ModelPicker;
             }
             ["/exa", key] => {
                 self.exa = Arc::new(ExaClient::new(key.to_string()));

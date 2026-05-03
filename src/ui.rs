@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, Mode, Overlay};
+use crate::app::{App, InputMode, Mode, Overlay, MODELS};
 use crate::filepicker::{file_kind, FileKind};
 use crate::editor::EditorMode;
 use crate::filetree::file_icon;
@@ -53,6 +53,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Overlay::CommandPalette => draw_command_palette(f, app, area),
         Overlay::FileOpen => draw_file_open(f, app, area),
         Overlay::FilePicker => draw_file_picker(f, app, area),
+        Overlay::ModelPicker => draw_model_picker(f, app, area),
         Overlay::None => {}
     }
 }
@@ -501,6 +502,49 @@ fn draw_file_picker(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Text::from(lines)).scroll((scroll_off as u16, 0)),
         inner,
     );
+}
+
+// ─── Model picker ─────────────────────────────────────────────────────────────
+
+fn draw_model_picker(f: &mut Frame, app: &App, area: Rect) {
+    let popup_h = MODELS.len() as u16 + 2;
+    let popup_w = 58u16.min(area.width.saturating_sub(4));
+    let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+    let popup_y = area.y + area.height.saturating_sub(popup_h + 4);
+
+    let popup_area = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            " /models  ↑↓ navigate  enter select  esc cancel ",
+            Style::default().fg(ACCENT),
+        ))
+        .style(Style::default().bg(OVERLAY_BG));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let current_model = app.cerebras_model.as_deref().unwrap_or("gpt-oss-120b");
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, (model_id, model_label)) in MODELS.iter().enumerate() {
+        let is_sel = i == app.model_picker_idx;
+        let is_active = *model_id == current_model;
+        let dot = if is_active { "● " } else { "  " };
+        let label = format!(" {}{:<36}", dot, model_label);
+        let padded = format!("{:<width$}", label, width = inner.width as usize);
+        let style = if is_sel {
+            Style::default().fg(BG).bg(ACCENT).add_modifier(Modifier::BOLD)
+        } else if is_active {
+            Style::default().fg(ACCENT)
+        } else {
+            Style::default().fg(FG)
+        };
+        lines.push(Line::from(Span::styled(padded, style)));
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 // ─── Welcome ──────────────────────────────────────────────────────────────────
@@ -988,11 +1032,11 @@ fn draw_command_palette(f: &mut Frame, app: &App, area: Rect) {
         ("r",                  "refresh",              "reload the file tree from disk"),
         ("", "", ""),
         ("── commands ─────────────────────────────────────────────────", "", ""),
-        ("/connect cerebras <key>",              "", "connect cerebras · default: gpt-oss-120b"),
-        ("/connect cerebras <key> llama3.1-8b", "", "connect cerebras · llama3.1-8b"),
-        ("/exa <key>",                           "", "update exa api key at runtime"),
-        ("/edit <path>",                         "", "open file directly in editor"),
-        ("/new",                                 "", "clear session, keep provider connection"),
+        ("/connect cerebras <key>",  "", "connect to cerebras · uses current model"),
+        ("/models",                  "", "pick model  zai-glm-4.7 · qwen-3-235b · gpt-oss-120b · llama3.1-8b"),
+        ("/exa <key>",               "", "update exa api key at runtime"),
+        ("/edit <path>",             "", "open file directly in editor"),
+        ("/new",                     "", "clear session, keep provider connection"),
     ];
 
     let visible_h = inner.height as usize;
