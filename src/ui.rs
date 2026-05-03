@@ -1,4 +1,5 @@
 use crate::app::{App, InputMode, Mode, Overlay};
+use crate::filepicker::{file_kind, FileKind};
 use crate::editor::EditorMode;
 use crate::filetree::file_icon;
 use crate::markdown::md_to_text;
@@ -482,13 +483,18 @@ fn draw_file_picker(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     for (i, name) in picker.filtered.iter().enumerate() {
         let is_sel = i == sel;
-        let (fg, bg) = if is_sel { (BG, ACCENT) } else { (FG, OVERLAY_BG) };
-        let label = format!("  {}", name);
-        let padded = format!("{:<width$}", label, width = inner.width as usize);
-        lines.push(Line::from(Span::styled(
-            padded,
-            Style::default().fg(fg).bg(bg),
-        )));
+        let kind = file_kind(name);
+        let (icon, idle_fg) = match kind {
+            FileKind::Dir   => ("▸ ", Color::Rgb(100, 160, 255)),
+            FileKind::Image => ("⬡ ", Color::Rgb(80, 200, 120)),
+            FileKind::File  => ("  ", FG),
+        };
+        let bg = if is_sel { idle_fg } else { OVERLAY_BG };
+        let fg = if is_sel { BG } else { idle_fg };
+
+        let label   = format!(" {}{}", icon, name);
+        let padded  = format!("{:<width$}", label, width = inner.width as usize);
+        lines.push(Line::from(Span::styled(padded, Style::default().fg(fg).bg(bg))));
     }
 
     f.render_widget(
@@ -680,6 +686,32 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
 
 // ─── Input ───────────────────────────────────────────────────────────────────
 
+fn render_input_with_mentions(input: &str) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut remaining = input;
+    while !remaining.is_empty() {
+        if let Some(at_pos) = remaining.find('@') {
+            if at_pos > 0 {
+                spans.push(Span::styled(
+                    remaining[..at_pos].to_string(),
+                    Style::default().fg(FG),
+                ));
+            }
+            let after = &remaining[at_pos..];
+            let word_end = after.find(|c: char| c == ' ' || c == '\t').unwrap_or(after.len());
+            spans.push(Span::styled(
+                after[..word_end].to_string(),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ));
+            remaining = &after[word_end..];
+        } else {
+            spans.push(Span::styled(remaining.to_string(), Style::default().fg(FG)));
+            break;
+        }
+    }
+    Line::from(spans)
+}
+
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let is_typing = app.input_mode == InputMode::Typing;
     let border_color = if is_typing { ACCENT } else { DIM };
@@ -693,7 +725,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let display = if app.input.is_empty() && !is_typing {
         Line::from(Span::styled(placeholder, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)))
     } else {
-        Line::from(Span::styled(app.input.as_str(), Style::default().fg(FG)))
+        render_input_with_mentions(&app.input)
     };
 
     let mc = match app.mode { Mode::Plan => ACCENT, Mode::Edit => GREEN };

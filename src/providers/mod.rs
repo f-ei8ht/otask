@@ -10,6 +10,7 @@ pub struct Message {
 }
 
 pub trait Provider: Send + Sync {
+    #[allow(dead_code)]
     fn chat(
         &self,
         messages: Vec<Message>,

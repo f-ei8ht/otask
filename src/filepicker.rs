@@ -1,5 +1,25 @@
 use std::fs;
 
+#[derive(Clone, PartialEq)]
+pub enum FileKind {
+    Dir,
+    Image,
+    File,
+}
+
+pub fn file_kind(name: &str) -> FileKind {
+    if name.ends_with('/') {
+        return FileKind::Dir;
+    }
+    let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "tiff" | "avif" => {
+            FileKind::Image
+        }
+        _ => FileKind::File,
+    }
+}
+
 pub struct FilePicker {
     pub files: Vec<String>,
     pub filtered: Vec<String>,
@@ -66,15 +86,17 @@ fn scan_dir(base: &str, current: &str, acc: &mut Vec<String>) {
         if fname.starts_with('.') || fname == "target" || fname == "node_modules" {
             continue;
         }
+        let name = path.to_string_lossy().to_string();
+        let relative = name
+            .strip_prefix(base)
+            .unwrap_or(&name)
+            .trim_start_matches('/')
+            .to_string();
+
         if path.is_dir() {
-            scan_dir(base, &path.to_string_lossy(), acc);
+            acc.push(format!("{}/", relative));
+            scan_dir(base, &name, acc);
         } else {
-            let name = path.to_string_lossy().to_string();
-            let relative = name
-                .strip_prefix(base)
-                .unwrap_or(&name)
-                .trim_start_matches('/')
-                .to_string();
             acc.push(relative);
         }
     }

@@ -629,6 +629,9 @@ impl App {
                 let files = std::mem::take(&mut self.attached_files);
                 let mut attachments = String::new();
                 for file in &files {
+                    if file.ends_with('/') {
+                        continue; // directories have no readable content
+                    }
                     let full_path = format!("{}/{}", self.cwd, file);
                     if let Ok(fc) = std::fs::read_to_string(&full_path) {
                         attachments.push_str(&format!(

@@ -3,6 +3,7 @@ use anyhow::Result;
 use reqwest::Client;
 use serde_json::json;
 
+#[allow(dead_code)]
 pub struct CerebrasProvider {
     pub api_key: String,
     pub model: String,
