@@ -484,17 +484,28 @@ fn draw_file_picker(f: &mut Frame, app: &App, area: Rect) {
     for (i, name) in picker.filtered.iter().enumerate() {
         let is_sel = i == sel;
         let kind = file_kind(name);
-        let (icon, idle_fg) = match kind {
-            FileKind::Dir   => ("▸ ", Color::Rgb(100, 160, 255)),
-            FileKind::Image => ("⬡ ", Color::Rgb(80, 200, 120)),
-            FileKind::File  => ("  ", FG),
-        };
-        let bg = if is_sel { idle_fg } else { OVERLAY_BG };
-        let fg = if is_sel { BG } else { idle_fg };
 
-        let label   = format!(" {}{}", icon, name);
-        let padded  = format!("{:<width$}", label, width = inner.width as usize);
-        lines.push(Line::from(Span::styled(padded, Style::default().fg(fg).bg(bg))));
+        let (badge_text, badge_fg, badge_bg, name_fg) = match kind {
+            FileKind::Dir   => (" dir ", BG, Color::Rgb(100, 160, 255), Color::Rgb(140, 190, 255)),
+            FileKind::Image => (" img ", BG, Color::Rgb(80, 200, 120),  Color::Rgb(80, 200, 120)),
+            FileKind::File  => (" file", BG, Color::Rgb(70, 70, 70),    FG),
+        };
+
+        let row_bg = if is_sel { Color::Rgb(25, 35, 55) } else { OVERLAY_BG };
+
+        // badge stays its type color; name area gets row_bg when selected
+        let name_text = format!("  {}  ", name);
+        let name_padded = format!(
+            "{:<width$}",
+            name_text,
+            width = (inner.width as usize).saturating_sub(badge_text.len() + 3)
+        );
+
+        lines.push(Line::from(vec![
+            Span::styled(badge_text, Style::default().fg(badge_fg).bg(badge_bg).add_modifier(Modifier::BOLD)),
+            Span::styled(" │", Style::default().fg(Color::Rgb(50, 50, 50)).bg(row_bg)),
+            Span::styled(name_padded, Style::default().fg(if is_sel { Color::Rgb(220, 220, 220) } else { name_fg }).bg(row_bg)),
+        ]));
     }
 
     f.render_widget(
