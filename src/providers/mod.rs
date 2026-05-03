@@ -1,4 +1,5 @@
 pub mod cerebras;
+pub mod nvidia;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};

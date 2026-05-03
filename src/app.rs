@@ -4,7 +4,7 @@ use crate::exa::{plan_chat, ExaClient};
 use crate::filepicker::FilePicker;
 use crate::filetree::FileTree;
 use crate::highlight::Highlighter;
-use crate::providers::{cerebras::CerebrasProvider, Message, Provider};
+use crate::providers::{cerebras::CerebrasProvider, nvidia::NvidiaProvider, Message, Provider};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{backend::Backend, Terminal};
 use std::fs;
@@ -34,12 +34,28 @@ pub enum InputMode {
     Typing,
 }
 
-pub const MODELS: &[(&str, &str)] = &[
+pub const CEREBRAS_MODELS: &[(&str, &str)] = &[
     ("zai-glm-4.7",                      "GLM-4.7  ·  ZhipuAI"),
     ("qwen-3-235b-a22b-instruct-2507",   "Qwen-3 235B  ·  Alibaba"),
     ("gpt-oss-120b",                     "GPT-OSS 120B  ·  default"),
     ("llama3.1-8b",                      "Llama 3.1 8B  ·  Meta"),
 ];
+
+pub const NVIDIA_MODELS: &[(&str, &str)] = &[
+    ("z-ai/glm-4.7",                       "GLM-4.7  ·  z.ai  (free endpoint)"),
+    ("meta/llama-3.1-8b-instruct",         "Llama 3.1 8B  ·  Meta  (free endpoint)"),
+    ("meta/llama-3.3-70b-instruct",        "Llama 3.3 70B  ·  Meta  (free endpoint)"),
+    ("mistralai/mistral-7b-instruct-v0.3", "Mistral 7B  ·  Mistral  (free endpoint)"),
+];
+
+/// Return the right model list for the currently active provider.
+pub fn active_models(provider_name: Option<&str>) -> &'static [(&'static str, &'static str)] {
+    if provider_name.map(|n| n.starts_with("nvidia")).unwrap_or(false) {
+        NVIDIA_MODELS
+    } else {
+        CEREBRAS_MODELS
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Overlay {
@@ -97,6 +113,8 @@ pub struct App {
     pub attached_files: Vec<String>,
     /// Selected row in the model picker overlay.
     pub model_picker_idx: usize,
+    /// NVIDIA API key (set via /connect nvidia <key>).
+    pub nvidia_key: Option<String>,
 }
 
 impl App {
@@ -136,6 +154,7 @@ impl App {
             picker: None,
             attached_files: vec![],
             model_picker_idx: 2, // default = gpt-oss-120b (index 2)
+            nvidia_key: None,
         }
     }
 
@@ -320,6 +339,7 @@ impl App {
 
                         // ── Model picker overlay ─────────────────────────────
                         if self.overlay == Overlay::ModelPicker {
+                            let models = active_models(self.provider_name.as_deref());
                             match key.code {
                                 KeyCode::Esc => self.overlay = Overlay::None,
                                 KeyCode::Up | KeyCode::Char('k') => {
@@ -328,19 +348,32 @@ impl App {
                                     }
                                 }
                                 KeyCode::Down | KeyCode::Char('j') => {
-                                    if self.model_picker_idx + 1 < MODELS.len() {
+                                    if self.model_picker_idx + 1 < models.len() {
                                         self.model_picker_idx += 1;
                                     }
                                 }
                                 KeyCode::Enter => {
-                                    let (model_id, _) = MODELS[self.model_picker_idx];
+                                    let (model_id, _) = models[self.model_picker_idx];
                                     let model = model_id.to_string();
-                                    self.cerebras_model = Some(model.clone());
-                                    if let Some(key) = self.cerebras_key.clone() {
-                                        let provider = Arc::new(CerebrasProvider::new(key, Some(model.clone())));
-                                        self.provider = Some(provider);
+                                    let is_nvidia = self.provider_name.as_deref()
+                                        .map(|n| n.starts_with("nvidia"))
+                                        .unwrap_or(false);
+                                    if is_nvidia {
+                                        if let Some(key) = self.nvidia_key.clone() {
+                                            let provider = Arc::new(NvidiaProvider::new(key, Some(model.clone())));
+                                            self.provider = Some(provider);
+                                        }
+                                        self.provider_name = self.nvidia_key.as_ref()
+                                            .map(|_| format!("nvidia · {}", model));
+                                    } else {
+                                        self.cerebras_model = Some(model.clone());
+                                        if let Some(key) = self.cerebras_key.clone() {
+                                            let provider = Arc::new(CerebrasProvider::new(key, Some(model.clone())));
+                                            self.provider = Some(provider);
+                                        }
+                                        self.provider_name = self.cerebras_key.as_ref()
+                                            .map(|_| format!("cerebras · {}", model));
                                     }
-                                    self.provider_name = self.cerebras_key.as_ref().map(|_| format!("cerebras · {}", model));
                                     self.flash_status(format!("model → {}", model));
                                     self.overlay = Overlay::None;
                                 }
@@ -699,23 +732,46 @@ impl App {
                 let provider = Arc::new(CerebrasProvider::new(api_key.clone(), Some(model.clone())));
                 self.provider = Some(provider);
                 self.cerebras_key = Some(api_key);
+                self.nvidia_key = None;
                 self.cerebras_model = Some(model.clone());
                 self.provider_name = Some(format!("cerebras · {}", model));
                 self.flash_status(format!("connected · {} — use /models to switch model", model));
                 self.scroll_to_bottom();
             }
+            ["/connect", "nvidia", api_key] => {
+                let api_key = api_key.to_string();
+                let model = "z-ai/glm-4.7".to_string();
+                let provider = Arc::new(NvidiaProvider::new(api_key.clone(), Some(model.clone())));
+                self.provider = Some(provider);
+                self.nvidia_key = Some(api_key);
+                self.cerebras_key = None;
+                self.cerebras_model = None;
+                self.model_picker_idx = 0; // z-ai/glm-4.7 is first in NVIDIA_MODELS
+                self.provider_name = Some(format!("nvidia · {}", model));
+                self.flash_status(
+                    "connected to nvidia · z-ai/glm-4.7 — get free keys at build.nvidia.com".to_string(),
+                );
+                self.scroll_to_bottom();
+            }
             ["/connect", other, ..] => {
-                self.flash_status(format!("unknown provider '{}' — only cerebras is supported", other));
+                self.flash_status(format!(
+                    "unknown provider '{}' — use: cerebras or nvidia",
+                    other
+                ));
             }
             ["/connect"] => {
-                self.flash_status("usage: /connect cerebras <api_key>".to_string());
+                self.flash_status("usage: /connect cerebras <key>  or  /connect nvidia <key>".to_string());
             }
             ["/models"] | ["/model"] => {
                 // sync picker index to current model
-                if let Some(ref cm) = self.cerebras_model {
-                    if let Some(idx) = MODELS.iter().position(|(id, _)| id == cm) {
-                        self.model_picker_idx = idx;
-                    }
+                let models = active_models(self.provider_name.as_deref());
+                let current = self.cerebras_model.as_deref()
+                    .or(self.nvidia_key.as_deref().map(|_| "z-ai/glm-4.7").into())
+                    .unwrap_or("gpt-oss-120b");
+                if let Some(idx) = models.iter().position(|(id, _)| *id == current) {
+                    self.model_picker_idx = idx.min(models.len().saturating_sub(1));
+                } else {
+                    self.model_picker_idx = 0;
                 }
                 self.overlay = Overlay::ModelPicker;
             }
@@ -818,6 +874,16 @@ impl App {
             });
             return;
         }
+
+        // Fallback: generic provider.chat() — handles NVIDIA and any
+        // non-Cerebras provider (no tool calling, plain conversation).
+        let provider = self.provider.clone().unwrap();
+        tokio::spawn(async move {
+            match provider.chat(history).await {
+                Ok(r) => { let _ = tx.send(AppEvent::Response(r)).await; }
+                Err(e) => { let _ = tx.send(AppEvent::Error(e.to_string())).await; }
+            }
+        });
     }
 
     fn open_file_picker(&mut self, at_pos: Option<usize>) {
