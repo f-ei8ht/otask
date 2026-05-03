@@ -1,6 +1,7 @@
 use crate::edit_chat::edit_chat;
 use crate::editor::{EditorAction, EditorMode, EditorState};
 use crate::exa::{plan_chat, ExaClient};
+use crate::filepicker::FilePicker;
 use crate::filetree::FileTree;
 use crate::highlight::Highlighter;
 use crate::providers::{cerebras::CerebrasProvider, Message, Provider};
@@ -38,6 +39,7 @@ pub enum Overlay {
     None,
     CommandPalette,
     FileOpen,
+    FilePicker,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +83,10 @@ pub struct App {
     /// Last known "bottom" scroll offset, set by the renderer each frame.
     /// Allows scroll_up to move smoothly from the bottom instead of jumping to top.
     pub bottom_hint: std::cell::Cell<usize>,
+    /// File picker overlay state.
+    pub picker: Option<FilePicker>,
+    /// Files attached via @ mention — contents injected into next message.
+    pub attached_files: Vec<String>,
 }
 
 impl App {
@@ -117,6 +123,8 @@ impl App {
                 .to_string_lossy()
                 .to_string(),
             bottom_hint: std::cell::Cell::new(0),
+            picker: None,
+            attached_files: vec![],
         }
     }
 
@@ -299,6 +307,28 @@ impl App {
                             continue;
                         }
 
+                        // ── File picker overlay ──────────────────────────────
+                        if self.overlay == Overlay::FilePicker {
+                            match key.code {
+                                KeyCode::Esc => self.close_picker_cancel(),
+                                KeyCode::Up => {
+                                    if let Some(p) = &mut self.picker {
+                                        p.move_up();
+                                    }
+                                }
+                                KeyCode::Down => {
+                                    if let Some(p) = &mut self.picker {
+                                        p.move_down();
+                                    }
+                                }
+                                KeyCode::Enter => self.close_picker_select(),
+                                KeyCode::Backspace => self.picker_backspace(),
+                                KeyCode::Char(c) => self.picker_type(c),
+                                _ => {}
+                            }
+                            continue;
+                        }
+
                         // ── Global shortcuts ─────────────────────────────────
                         if key.modifiers.contains(KeyModifiers::CONTROL)
                             && key.code == KeyCode::Char('k')
@@ -324,6 +354,13 @@ impl App {
                         {
                             self.overlay = Overlay::FileOpen;
                             self.file_open_buf.clear();
+                            continue;
+                        }
+
+                        if key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('f')
+                        {
+                            self.open_file_picker(None);
                             continue;
                         }
 
@@ -405,6 +442,12 @@ impl App {
                                 }
                                 KeyCode::Home => self.cursor_pos = 0,
                                 KeyCode::End => self.cursor_pos = self.input.len(),
+                                KeyCode::Char('@') => {
+                                    self.input.insert(self.cursor_pos, '@');
+                                    let at_pos = self.cursor_pos;
+                                    self.cursor_pos += 1;
+                                    self.open_file_picker(Some(at_pos));
+                                }
                                 KeyCode::Char(c) => {
                                     self.input.insert(self.cursor_pos, c);
                                     self.cursor_pos += 1;
@@ -581,7 +624,24 @@ impl App {
         if input.starts_with('/') {
             self.handle_command(input);
         } else {
-            self.send_message(input, tx).await;
+            let mut content = input;
+            if !self.attached_files.is_empty() {
+                let files = std::mem::take(&mut self.attached_files);
+                let mut attachments = String::new();
+                for file in &files {
+                    let full_path = format!("{}/{}", self.cwd, file);
+                    if let Ok(fc) = std::fs::read_to_string(&full_path) {
+                        attachments.push_str(&format!(
+                            "\n\n--- File: {} ---\n{}\n--- End of {} ---",
+                            file, fc, file
+                        ));
+                    }
+                }
+                if !attachments.is_empty() {
+                    content.push_str(&attachments);
+                }
+            }
+            self.send_message(content, tx).await;
         }
     }
 
@@ -703,6 +763,67 @@ impl App {
                 }
             });
             return;
+        }
+    }
+
+    fn open_file_picker(&mut self, at_pos: Option<usize>) {
+        let mut picker = FilePicker::new(&self.cwd);
+        picker.at_pos = at_pos;
+        self.picker = Some(picker);
+        self.overlay = Overlay::FilePicker;
+        self.input_mode = InputMode::Typing;
+    }
+
+    fn close_picker_cancel(&mut self) {
+        if let Some(p) = self.picker.take() {
+            if let Some(pos) = p.at_pos {
+                if pos < self.input.len() {
+                    self.input.remove(pos);
+                    self.cursor_pos = pos;
+                }
+            }
+        }
+        self.overlay = Overlay::None;
+    }
+
+    fn close_picker_select(&mut self) {
+        let file = self.picker.as_ref().and_then(|p| p.current().cloned());
+        let at_pos = self.picker.as_ref().and_then(|p| p.at_pos);
+        self.picker = None;
+        self.overlay = Overlay::None;
+        let Some(file) = file else { return };
+        let insert = format!("@{} ", file);
+        let pos = at_pos.unwrap_or(self.cursor_pos);
+        if at_pos.is_some() && pos < self.input.len() {
+            self.input.remove(pos);
+        }
+        for (i, c) in insert.chars().enumerate() {
+            self.input.insert(pos + i, c);
+        }
+        self.cursor_pos = pos + insert.len();
+        self.attached_files.push(file);
+    }
+
+    fn picker_type(&mut self, c: char) {
+        if let Some(p) = &mut self.picker {
+            let mut q = p.query.clone();
+            q.push(c);
+            p.update_filter(&q);
+        }
+    }
+
+    fn picker_backspace(&mut self) {
+        let query_empty = self
+            .picker
+            .as_ref()
+            .map(|p| p.query.is_empty())
+            .unwrap_or(true);
+        if query_empty {
+            self.close_picker_cancel();
+        } else if let Some(p) = &mut self.picker {
+            let mut q = p.query.clone();
+            q.pop();
+            p.update_filter(&q);
         }
     }
 

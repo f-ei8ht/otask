@@ -2,6 +2,7 @@ mod app;
 mod edit_chat;
 mod editor;
 mod exa;
+mod filepicker;
 mod filetree;
 mod highlight;
 mod markdown;

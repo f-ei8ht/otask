@@ -1,0 +1,300 @@
+hi I want to attach files to my coding agent and it show what files are avialable using @filename i will type and show in the ui panel or dialog box or something like that show all the files I have when I type @ and also the box should open when I do shift shift two times like how to do that
+
+14:44
+Claude responded: Two things to implement: @ trigger for file picker + double Shift to open it.
+
+Architected file picker UI with @ mention and double-shift triggers
+Architected file picker UI with @ mention and double-shift triggers
+Two things to implement: @ trigger for file picker + double Shift to open it. Here's exactly what to add:
+
+1. File Picker State
+Add this to your app state:
+
+rust
+#[derive(PartialEq)]
+pub enum InputMode {
+    Normal,
+    FilePicker,
+}
+
+pub struct FilePicker {
+    pub files: Vec<String>,       // all files in cwd
+    pub filtered: Vec<String>,    // files matching typed query
+    pub selected: usize,          // highlighted index
+    pub query: String,            // what user typed after @
+}
+
+impl FilePicker {
+    pub fn new(cwd: &str) -> Self {
+        let files = scan_files(cwd);
+        let filtered = files.clone();
+        Self { files, filtered, selected: 0, query: String::new() }
+    }
+
+    pub fn update_filter(&mut self, query: &str) {
+        self.query = query.to_string();
+        self.filtered = self.files.iter()
+            .filter(|f| f.to_lowercase().contains(&query.to_lowercase()))
+            .cloned()
+            .collect();
+        self.selected = 0;
+    }
+
+    pub fn move_up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    pub fn move_down(&mut self) {
+        if self.selected + 1 < self.filtered.len() {
+            self.selected += 1;
+        }
+    }
+
+    pub fn current(&self) -> Option<&String> {
+        self.filtered.get(self.selected)
+    }
+}
+2. Scan Files in cwd
+rust
+use std::fs;
+
+pub fn scan_files(cwd: &str) -> Vec<String> {
+    let mut files = Vec::new();
+    scan_dir(cwd, cwd, &mut files);
+    files
+}
+
+fn scan_dir(base: &str, current: &str, acc: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(current) else { return };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.to_string_lossy().to_string();
+
+        // skip hidden dirs and target/node_modules
+        let fname = entry.file_name().to_string_lossy().to_string();
+        if fname.starts_with('.') || fname == "target" || fname == "node_modules" {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir(base, &name, acc);
+        } else {
+            // Store relative path
+            let relative = name.strip_prefix(base)
+                .unwrap_or(&name)
+                .trim_start_matches('/')
+                .to_string();
+            acc.push(relative);
+        }
+    }
+}
+3. Double-Shift Detection
+rust
+pub struct ShiftTracker {
+    last_shift_at: Option<std::time::Instant>,
+}
+
+impl ShiftTracker {
+    pub fn new() -> Self { Self { last_shift_at: None } }
+
+    // Returns true if this is a double-shift
+    pub fn press(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last_shift_at {
+            if now.duration_since(last).as_millis() < 400 {
+                self.last_shift_at = None; // reset
+                return true;
+            }
+        }
+        self.last_shift_at = Some(now);
+        false
+    }
+}
+4. Key Handling in Event Loop
+rust
+// In your App struct, add:
+pub mode: InputMode,
+pub picker: Option<FilePicker>,
+pub shift_tracker: ShiftTracker,
+
+// In your key event handler:
+match app.mode {
+    InputMode::Normal => {
+        match key.code {
+            KeyCode::Shift => {
+                if app.shift_tracker.press() {
+                    // Double shift — open picker
+                    app.picker = Some(FilePicker::new(&cwd));
+                    app.mode = InputMode::FilePicker;
+                }
+            }
+            KeyCode::Char('@') => {
+                app.input.push('@');
+                // Open picker immediately
+                let mut picker = FilePicker::new(&cwd);
+                picker.update_filter("");
+                app.picker = Some(picker);
+                app.mode = InputMode::FilePicker;
+            }
+            KeyCode::Char(c) => {
+                app.input.push(c);
+            }
+            KeyCode::Backspace => {
+                app.input.pop();
+            }
+            KeyCode::Enter => {
+                // submit task
+            }
+            _ => {}
+        }
+    }
+
+    InputMode::FilePicker => {
+        match key.code {
+            KeyCode::Esc => {
+                // Close picker, remove the @ if nothing selected
+                app.mode = InputMode::Normal;
+                app.picker = None;
+            }
+            KeyCode::Up => {
+                if let Some(p) = &mut app.picker { p.move_up(); }
+            }
+            KeyCode::Down => {
+                if let Some(p) = &mut app.picker { p.move_down(); }
+            }
+            KeyCode::Enter => {
+                if let Some(p) = &app.picker {
+                    if let Some(file) = p.current() {
+                        let file = file.clone();
+
+                        // Remove the partial @query from input, insert @filename
+                        let at_pos = app.input.rfind('@').unwrap_or(app.input.len());
+                        app.input.truncate(at_pos);
+                        app.input.push_str(&format!("@{} ", file));
+
+                        // Also store as attached file for agent
+                        app.attached_files.push(file);
+                    }
+                }
+                app.mode = InputMode::Normal;
+                app.picker = None;
+            }
+            KeyCode::Backspace => {
+                if let Some(p) = &mut app.picker {
+                    p.query.pop();
+                    let q = p.query.clone();
+                    p.update_filter(&q);
+
+                    // If user deleted past @, close picker
+                    if app.input.ends_with('@') || !app.input.contains('@') {
+                        app.mode = InputMode::Normal;
+                        app.picker = None;
+                    } else {
+                        app.input.pop();
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                // User is typing to filter
+                app.input.push(c);
+                if let Some(p) = &mut app.picker {
+                    let mut q = p.query.clone();
+                    q.push(c);
+                    p.update_filter(&q);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+5. Render the Picker Popup
+rust
+use ratatui::{
+    layout::Rect,
+    widgets::{Block, Borders, Clear, List, ListItem, ListState},
+    style::{Color, Style, Modifier},
+};
+
+fn render_file_picker(f: &mut ratatui::Frame, picker: &FilePicker, area: Rect) {
+    // Popup centered above input box
+    let popup_area = Rect {
+        x: area.x + 2,
+        y: area.y.saturating_sub(12),
+        width: area.width.saturating_sub(4).min(60),
+        height: 12,
+    };
+
+    // Clear background
+    f.render_widget(Clear, popup_area);
+
+    let items: Vec<ListItem> = picker.filtered.iter().enumerate().map(|(i, name)| {
+        let style = if i == picker.selected {
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        ListItem::new(format!("  {}", name)).style(style)
+    }).collect();
+
+    let title = if picker.query.is_empty() {
+        " 📁 Files (type to filter) ".to_string()
+    } else {
+        format!(" 📁 @{} ", picker.query)
+    };
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(title)
+        );
+
+    f.render_widget(list, popup_area);
+}
+
+// Call this in your main draw fn, after rendering everything else:
+// if app.mode == InputMode::FilePicker {
+//     if let Some(picker) = &app.picker {
+//         render_file_picker(f, picker, input_area);
+//     }
+// }
+6. Pass Attached Files to Agent
+When user hits Enter to submit their task:
+
+rust
+// Read content of all attached files and inject into system/user message
+let mut attachments = String::new();
+for file in &app.attached_files {
+    let full_path = format!("{}/{}", cwd, file);
+    if let Ok(content) = std::fs::read_to_string(&full_path) {
+        attachments.push_str(&format!(
+            "\n\n--- File: {} ---\n{}\n--- End of {} ---\n",
+            file, content, file
+        ));
+    }
+}
+
+let full_task = if attachments.is_empty() {
+    app.input.clone()
+} else {
+    format!("{}\n\nAttached files:{}", app.input, attachments)
+};
+
+task_tx.send(full_task).await.ok();
+app.attached_files.clear();
+Flow Summary
+User types @        →  picker opens, shows all files
+User types @src     →  filters to files containing "src"  
+↑ ↓ arrows         →  navigate list
+Enter              →  inserts @filename into input, closes picker
+Esc                →  closes picker, cancels
+
+Shift Shift        →  same picker opens (without @ in input)
+Enter              →  inserts @filename
+
+On task submit     →  file contents are read and sent to Cerebras as context
+Bas yahi hai — @ trigger, double-shift, filtered list, aur file content agent ko context mein inject ho jaata hai.
+
+

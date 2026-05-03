@@ -50,6 +50,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     match app.overlay {
         Overlay::CommandPalette => draw_command_palette(f, app, area),
         Overlay::FileOpen => draw_file_open(f, app, area),
+        Overlay::FilePicker => draw_file_picker(f, app, area),
         Overlay::None => {}
     }
 }
@@ -424,6 +425,78 @@ fn draw_file_open(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(input_line), chunks[1]);
 }
 
+// ─── File picker popup ───────────────────────────────────────────────────────
+
+fn draw_file_picker(f: &mut Frame, app: &App, area: Rect) {
+    let picker = match app.picker.as_ref() {
+        Some(p) => p,
+        None => return,
+    };
+
+    let max_items = picker.filtered.len().min(12);
+    let popup_h = (max_items as u16 + 2).max(4);
+    let popup_w = 66u16.min(area.width.saturating_sub(4));
+    let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+    // sit just above the input box (which is ~3 rows from the bottom)
+    let popup_y = area.y + area.height.saturating_sub(popup_h + 3);
+
+    let popup_area = Rect {
+        x: popup_x,
+        y: popup_y,
+        width: popup_w,
+        height: popup_h,
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let title = if picker.query.is_empty() {
+        " @ files  type to filter  esc cancel ".to_string()
+    } else {
+        format!(" @{}  esc cancel ", picker.query)
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(title, Style::default().fg(ACCENT)))
+        .style(Style::default().bg(OVERLAY_BG));
+
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    if picker.filtered.is_empty() {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "  no files match",
+                Style::default().fg(MUTED).add_modifier(Modifier::ITALIC),
+            )),
+            inner,
+        );
+        return;
+    }
+
+    let h = inner.height as usize;
+    let sel = picker.selected;
+    let scroll_off = if sel >= h { sel + 1 - h } else { 0 };
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, name) in picker.filtered.iter().enumerate() {
+        let is_sel = i == sel;
+        let (fg, bg) = if is_sel { (BG, ACCENT) } else { (FG, OVERLAY_BG) };
+        let label = format!("  {}", name);
+        let padded = format!("{:<width$}", label, width = inner.width as usize);
+        lines.push(Line::from(Span::styled(
+            padded,
+            Style::default().fg(fg).bg(bg),
+        )));
+    }
+
+    f.render_widget(
+        Paragraph::new(Text::from(lines)).scroll((scroll_off as u16, 0)),
+        inner,
+    );
+}
+
 // ─── Welcome ──────────────────────────────────────────────────────────────────
 
 fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
@@ -480,7 +553,11 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
             Span::styled("ctrl+k", Style::default().fg(MUTED)),
             Span::styled("  commands  ", Style::default().fg(DIM)),
             Span::styled("ctrl+v", Style::default().fg(MUTED)),
-            Span::styled("  editor", Style::default().fg(DIM)),
+            Span::styled("  editor  ", Style::default().fg(DIM)),
+            Span::styled("@", Style::default().fg(MUTED)),
+            Span::styled(" / ", Style::default().fg(DIM)),
+            Span::styled("ctrl+f", Style::default().fg(MUTED)),
+            Span::styled("  files", Style::default().fg(DIM)),
         ]))
         .alignment(Alignment::Center),
         Rect { x: area.x, y: area.y + input_y + 4, width: area.width, height: 1 },
@@ -595,7 +672,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Line::from(vec![
             Span::styled(format!(" {}  ", app.mode), Style::default().fg(mc)),
             Span::styled(status_text, Style::default().fg(sc)),
-            Span::styled("ctrl+k commands  ctrl+v editor  ", Style::default().fg(DIM)),
+            Span::styled("ctrl+k commands  ctrl+v editor  @ / ctrl+f files  ", Style::default().fg(DIM)),
         ])),
         footer_area,
     );
