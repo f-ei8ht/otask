@@ -1,10 +1,12 @@
 mod app;
+mod edit_chat;
 mod editor;
 mod exa;
 mod filetree;
 mod highlight;
 mod markdown;
 mod providers;
+mod tools;
 mod ui;
 
 use app::App;

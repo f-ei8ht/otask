@@ -1,3 +1,4 @@
+use crate::edit_chat::edit_chat;
 use crate::editor::{EditorAction, EditorMode, EditorState};
 use crate::exa::{plan_chat, ExaClient};
 use crate::filetree::FileTree;
@@ -75,6 +76,8 @@ pub struct App {
     pub tree: Option<FileTree>,
     pub tree_focused: bool,
     pub highlighter: Highlighter,
+    /// Working directory captured at startup — passed to every file tool call.
+    pub cwd: String,
     /// Last known "bottom" scroll offset, set by the renderer each frame.
     /// Allows scroll_up to move smoothly from the bottom instead of jumping to top.
     pub bottom_hint: std::cell::Cell<usize>,
@@ -109,6 +112,10 @@ impl App {
             tree: None,
             tree_focused: false,
             highlighter: Highlighter::new(),
+            cwd: std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             bottom_hint: std::cell::Cell::new(0),
         }
     }
@@ -662,18 +669,41 @@ impl App {
             }
         }
 
-        // Edit mode: simple chat, no web search
-        let mode_ctx = "You are an expert AI coding assistant in EDIT mode. Help the user write, modify, and debug code. Be precise and always provide complete, working code.";
-        let mut messages = vec![Message { role: "system".to_string(), content: mode_ctx.to_string() }];
-        messages.extend(history);
+        // Edit mode: file-aware tool-calling loop (read / create / edit)
+        if let (Some(ck), Some(cm)) = (self.cerebras_key.clone(), self.cerebras_model.clone()) {
+            let cwd = self.cwd.clone();
 
-        let provider = Arc::clone(self.provider.as_ref().unwrap());
-        tokio::spawn(async move {
-            match provider.chat(messages).await {
-                Ok(r) => { let _ = tx.send(AppEvent::Response(r)).await; }
-                Err(e) => { let _ = tx.send(AppEvent::Error(e.to_string())).await; }
+            let system_msg = serde_json::json!({
+                "role": "system",
+                "content": format!(
+                    "You are an expert AI coding assistant in EDIT mode. \
+                     The user's working directory is: {cwd}\n\
+                     You have three file tools:\n\
+                     - read_file: read a file before editing it\n\
+                     - create_file: create or overwrite a file\n\
+                     - edit_file: replace a unique string in a file (str-replace)\n\
+                     Always read_file first before editing so you know the exact current content. \
+                     After making changes, summarise what you did concisely.",
+                    cwd = cwd
+                )
+            });
+
+            let mut json_msgs = vec![system_msg];
+            for m in &history {
+                json_msgs.push(serde_json::json!({
+                    "role": m.role,
+                    "content": m.content
+                }));
             }
-        });
+
+            tokio::spawn(async move {
+                match edit_chat(ck, cm, json_msgs, cwd).await {
+                    Ok(r) => { let _ = tx.send(AppEvent::Response(r)).await; }
+                    Err(e) => { let _ = tx.send(AppEvent::Error(e.to_string())).await; }
+                }
+            });
+            return;
+        }
     }
 
     fn new_session(&mut self) {

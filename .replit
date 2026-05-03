@@ -1,4 +1,4 @@
-modules = ["rust-stable"]
+modules = ["rust-stable", "rust-nightly"]
 [agent]
 expertMode = true
 
