@@ -4,9 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>otask — AI coding agent for the terminal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css" />
   <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
   <style>
+    @font-face {
+      font-family: "Departure Mono";
+      src: url("DepartureMono-Regular.otf") format("opentype");
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
     /* ── Blue dark theme override ─────────────────────────────────────── */
     :root {
       --background:           oklch(0.141 0.005 285.823);
@@ -97,6 +107,35 @@
     body {
       background: var(--background);
       color: var(--foreground);
+      font-family: "EB Garamond", Georgia, serif;
+      font-size: 1.05rem;
+      font-optical-sizing: auto;
+    }
+
+    h1, h2, h3, h4, h5, h6,
+    .section-title,
+    .site-nav .logo,
+    .mode-pill,
+    .terminal-title,
+    .section-label,
+    .install-step h4,
+    .feature-card h3,
+    .mode-card h3,
+    .hero-badge {
+      font-family: "Departure Mono", "SF Mono", ui-monospace, monospace;
+      letter-spacing: -0.01em;
+    }
+
+    /* EB Garamond looks better slightly larger for body copy */
+    p, li, .feature-card p, .mode-card ul, .section-sub, .hero p {
+      font-family: "EB Garamond", Georgia, serif;
+      font-size: 1.08rem;
+      line-height: 1.75;
+    }
+
+    /* Keep terminal/code areas in monospace */
+    .terminal, .terminal-body, .install-step pre, kbd, code, pre {
+      font-family: "Departure Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
     }
 
     /* ── Nav ────────────────────────────────────────────────────────────── */
