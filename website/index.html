@@ -760,36 +760,17 @@
   <h2 class="section-title">One line to install</h2>
   <p class="section-sub">Download a pre-built binary with curl, or build from source with Cargo.</p>
 
-  <!-- Download box with platform tabs -->
+  <!-- Download box -->
   <div class="download-box">
     <div class="download-tabs">
-      <button class="download-tab active" onclick="switchTab('linux')">🐧 Linux x86_64</button>
-      <button class="download-tab" onclick="switchTab('mac-arm')">🍎 macOS arm64</button>
-      <button class="download-tab" onclick="switchTab('mac-x86')">🍎 macOS x86_64</button>
+      <button class="download-tab active">🐧 Linux x86_64</button>
     </div>
-
     <div class="download-panel active" id="tab-linux">
       <div class="curl-line">
-        <pre id="cmd-linux">curl -fsSL https://github.com/saifcore7/otask/releases/latest/download/otask-linux-x86_64 -o ~/.local/bin/otask && chmod +x ~/.local/bin/otask</pre>
+        <pre id="cmd-linux">curl -fsSL https://github.com/f-ei8ht/otask/releases/latest/download/otask-linux-x86_64 -o otask && chmod +x otask && sudo mv otask /usr/local/bin/</pre>
         <button class="copy-btn" onclick="copyCmd('cmd-linux', this)">copy</button>
       </div>
-      <p class="curl-note">Downloads the binary to <code>~/.local/bin/otask</code>. Make sure <code>~/.local/bin</code> is in your <code>$PATH</code>.</p>
-    </div>
-
-    <div class="download-panel" id="tab-mac-arm">
-      <div class="curl-line">
-        <pre id="cmd-mac-arm">curl -fsSL https://github.com/saifcore7/otask/releases/latest/download/otask-macos-arm64 -o /usr/local/bin/otask && chmod +x /usr/local/bin/otask</pre>
-        <button class="copy-btn" onclick="copyCmd('cmd-mac-arm', this)">copy</button>
-      </div>
-      <p class="curl-note">For Apple Silicon (M1 / M2 / M3). Downloads to <code>/usr/local/bin/otask</code> — already in your <code>$PATH</code>.</p>
-    </div>
-
-    <div class="download-panel" id="tab-mac-x86">
-      <div class="curl-line">
-        <pre id="cmd-mac-x86">curl -fsSL https://github.com/saifcore7/otask/releases/latest/download/otask-macos-x86_64 -o /usr/local/bin/otask && chmod +x /usr/local/bin/otask</pre>
-        <button class="copy-btn" onclick="copyCmd('cmd-mac-x86', this)">copy</button>
-      </div>
-      <p class="curl-note">For Intel Macs. Downloads to <code>/usr/local/bin/otask</code> — already in your <code>$PATH</code>.</p>
+      <p class="curl-note">Downloads the binary and installs it to <code>/usr/local/bin/otask</code> — available system-wide immediately.</p>
     </div>
   </div>
 
