@@ -766,12 +766,16 @@
       <button class="download-tab active">🐧 Linux x86_64</button>
     </div>
     <div class="download-panel active" id="tab-linux">
+      <p class="curl-note" style="margin-bottom:0.6rem;color:var(--muted-foreground);font-size:0.78rem;font-family:'Departure Mono',monospace;letter-spacing:0.04em;">INSTALL</p>
       <div class="curl-line">
-        <pre id="cmd-linux">curl -fsSL https://github.com/f-ei8ht/otask/releases/latest/download/otask-linux-x86_64 -o otask && chmod +x otask && sudo mv otask /usr/local/bin/
-otask</pre>
+        <pre id="cmd-linux">curl -fsSL https://github.com/f-ei8ht/otask/releases/latest/download/otask-linux-x86_64 -o otask && chmod +x otask && sudo mv otask /usr/local/bin/</pre>
         <button class="copy-btn" onclick="copyCmd('cmd-linux', this)">copy</button>
       </div>
-      <p class="curl-note">Installs to <code>/usr/local/bin/otask</code> — then just type <code>otask</code> to launch.</p>
+      <p class="curl-note" style="margin-top:1.25rem;margin-bottom:0.6rem;color:var(--muted-foreground);font-size:0.78rem;font-family:'Departure Mono',monospace;letter-spacing:0.04em;">RUN</p>
+      <div class="curl-line">
+        <pre id="cmd-run">otask</pre>
+        <button class="copy-btn" onclick="copyCmd('cmd-run', this)">copy</button>
+      </div>
     </div>
   </div>
 
