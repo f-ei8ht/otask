@@ -737,30 +737,44 @@ fn mention_spans(text: &str) -> Vec<Span<'static>> {
     spans
 }
 
-fn render_input_with_mentions(input: &str) -> Line<'static> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut remaining = input;
-    while !remaining.is_empty() {
-        if let Some(at_pos) = remaining.find('@') {
-            if at_pos > 0 {
-                spans.push(Span::styled(
-                    remaining[..at_pos].to_string(),
-                    Style::default().fg(FG),
-                ));
+/// Calculate the visual column position in the rendered (badge-expanded) input
+/// corresponding to a byte offset in the raw input string.
+fn visual_cursor_pos(input: &str, cursor_byte: usize) -> usize {
+    let cursor_byte = cursor_byte.min(input.len());
+    let mut visual = 0usize;
+    let mut i = 0usize;
+
+    while i < cursor_byte {
+        if input.as_bytes().get(i) == Some(&b'@') {
+            let rest = &input[i + 1..];
+            let word_end = rest
+                .find(|c: char| c == ' ' || c == '\t')
+                .unwrap_or(rest.len());
+            let fname = &rest[..word_end];
+            let mention_end = i + 1 + word_end;
+
+            if !fname.is_empty() && mention_end <= cursor_byte {
+                // whole @mention is before cursor — count its visual width
+                let kind = file_kind(fname);
+                let badge = match kind {
+                    FileKind::Dir   => " dir ",
+                    FileKind::Image => " img ",
+                    FileKind::File  => " file",
+                };
+                // badge + " │ " (3 chars) + fname
+                visual += badge.len() + 3 + fname.len();
+                i = mention_end;
+            } else {
+                // cursor is at or inside this mention — count raw chars
+                visual += cursor_byte - i;
+                break;
             }
-            let after = &remaining[at_pos..];
-            let word_end = after.find(|c: char| c == ' ' || c == '\t').unwrap_or(after.len());
-            spans.push(Span::styled(
-                after[..word_end].to_string(),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            ));
-            remaining = &after[word_end..];
         } else {
-            spans.push(Span::styled(remaining.to_string(), Style::default().fg(FG)));
-            break;
+            visual += 1;
+            i += 1;
         }
     }
-    Line::from(spans)
+    visual
 }
 
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
@@ -776,7 +790,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let display = if app.input.is_empty() && !is_typing {
         Line::from(Span::styled(placeholder, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)))
     } else {
-        render_input_with_mentions(&app.input)
+        Line::from(mention_spans(&app.input))
     };
 
     let mc = match app.mode { Mode::Plan => ACCENT, Mode::Edit => GREEN };
@@ -807,7 +821,8 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     );
 
     if is_typing {
-        f.set_cursor_position((inner.x + app.cursor_pos as u16, inner.y));
+        let vcol = visual_cursor_pos(&app.input, app.cursor_pos);
+        f.set_cursor_position((inner.x + vcol as u16, inner.y));
     }
 }
 
