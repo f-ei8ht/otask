@@ -663,7 +663,7 @@
     <a href="#features" class="ghost button small">Features</a>
     <a href="#screenshots" class="ghost button small">Screenshots</a>
     <a href="#install" class="ghost button small">Install</a>
-    <a href="https://otask--saifcore7.replit.app/" class="button small outline">GitHub</a>
+    <a href="https://github.com/f-ei8ht/otask/" class="button small outline">GitHub</a>
   </div>
 </nav>
 
@@ -887,7 +887,6 @@
       <span class="feature-icon">🧠</span>
       <h3>GLM-4.7 Thinking</h3>
       <p>NVIDIA's GLM-4.7 model supports interleaved thinking with enable_thinking and clear_thinking flags for deeper reasoning.</p>
-      <span class="feature-tag">NVIDIA only</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">🦀</span>
@@ -934,6 +933,48 @@
     <div class="screenshot-item">
       <img src="Screenshot_20260503_171308_1777827837720.png" alt="otask file attachment" />
       <div class="screenshot-caption">@-mention file picker</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Commands ─────────────────────────────────────────────────────────── -->
+<section class="section">
+  <div class="section-label">Slash Commands</div>
+  <h2 class="section-title">Full command reference</h2>
+  <p class="section-sub">Type <code>/</code> in the input to start a command. Every command is reachable from the chat.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <h3>/connect cerebras &lt;key&gt;</h3>
+      <p>Connect to the Cerebras provider. Enables Plan mode (with web search tool-calling) and Edit mode (with file tool-calling). Supports gpt-oss-120b, qwen-3-235b, llama3.1-8b, and zai-glm-4.7.</p>
+    </div>
+    <div class="feature-card">
+      <h3>/connect nvidia &lt;key&gt;</h3>
+      <p>Connect to the NVIDIA provider. Free endpoints available. Supports GLM-4.7 (with interleaved thinking), Llama 3.1 8B, Llama 3.3 70B, and Mistral 7B.</p>
+    </div>
+    <div class="feature-card">
+      <h3>/models</h3>
+      <p>Open the interactive model picker overlay. Shows models for your active provider. Navigate with j/k, select with Enter, cancel with Esc.</p>
+    </div>
+    <div class="feature-card">
+      <h3>/exa &lt;key&gt;</h3>
+      <p>Set or update your Exa AI API key at runtime. Enables real-time web search in Plan mode.</p>
+    </div>
+    <div class="feature-card">
+      <h3>/edit &lt;path&gt;</h3>
+      <p>Open a specific file in the built-in vim-style editor. Supports syntax highlighting, line numbers, and dirty tracking.</p>
+    </div>
+    <div class="feature-card">
+      <h3>/edit</h3>
+      <p>Open the file-open prompt. Type a relative path to any file in your project to open it in the editor.</p>
+    </div>
+    <div class="feature-card">
+      <h3>/new</h3>
+      <p>Start a new session. Clears the chat history but keeps your current provider connection and API keys.</p>
+    </div>
+    <div class="feature-card">
+      <h3>/help</h3>
+      <p>Shows a hint to press Ctrl+K to open the full command palette with every keybinding and command listed.</p>
     </div>
   </div>
 </section>
