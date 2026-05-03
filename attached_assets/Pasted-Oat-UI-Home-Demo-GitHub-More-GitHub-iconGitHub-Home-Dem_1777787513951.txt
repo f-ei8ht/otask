@@ -1,0 +1,99 @@
+Oat UI
+Home
+Demo
+GitHub
+More
+GitHub iconGitHub
+Home
+Demo
+Usage
+Recipes
+Customizing
+Other tiny libs
+Extensions
+All components
+Typography
+Accordion
+Alert
+Avatar
+Badge
+Breadcrumb
+Button
+Card
+Dialog
+Dropdown
+WC
+Form elements
+Meter
+Pagination
+Progress
+Spinner
+Skeleton
+Sidebar
+Switch
+Table
+Tabs
+WC
+Tooltip
+Toast
+Grid
+Utils and helpers
+Switch theme
+Installation and usage
+IMPORTANT: The lib is currently sub v1 and is likely to have breaking changes until it hits v1.
+
+CDN
+Include the CSS and JS files directly in your HTML:
+
+Copy
+<link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
+<script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
+npm
+Copy
+npm install @knadh/oat
+Then import in your project:
+
+Copy
+import '@knadh/oat/oat.min.css';
+import '@knadh/oat/oat.min.js';
+Or import individual files from @knadh/oat/css and @knadh/oat/js.
+
+Download
+Download the CSS and JS files:
+
+Copy
+wget https://raw.githubusercontent.com/knadh/oat/refs/heads/gh-pages/oat.min.css
+wget https://raw.githubusercontent.com/knadh/oat/refs/heads/gh-pages/oat.min.js
+Then include them in your project:
+
+Copy
+<link rel="stylesheet" href="./oat.min.css">
+<script src="./oat.min.js" defer></script>
+Basic usage
+Oat styles semantic HTML elements by default. No classes needed for basic styling:
+
+Copy
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My App</title>
+  <link rel="stylesheet" href="oat.min.css">
+  <script src="oat.min.js" defer></script>
+</head>
+<body>
+  <h1>Hello World</h1>
+  <p>This paragraph is styled automatically.</p>
+  <button>Click me</button>
+</body>
+</html>
+Local dev setup
+Requirements
+zola static site generator installed to preview the docs/demo site and to try out changes.
+esbuild installed for bundling+minifying JS and CSS.
+Running
+Clone the oat repo
+cd docs and run zola serve to access the docs/demo site at http://localhost:1111
+After changing any CSS or JS files, run make dist. The demo site auto-updates with the changes.
+© Kailash Nadh
