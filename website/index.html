@@ -17,7 +17,6 @@
       font-style: normal;
       font-display: swap;
     }
-    /* ── Blue dark theme override ─────────────────────────────────────── */
     :root {
       --background:           oklch(0.141 0.005 285.823);
       --foreground:           oklch(0.985 0 0);
@@ -44,8 +43,6 @@
       --border:               oklch(1 0 0 / 10%);
       --input:                oklch(1 0 0 / 15%);
       --ring:                 oklch(0.552 0.016 285.938);
-
-      /* blue accent shades for custom use */
       --blue-bright:  oklch(0.809 0.105 251.813);
       --blue-vivid:   oklch(0.623 0.214 259.815);
       --blue-mid:     oklch(0.546 0.245 262.881);
@@ -53,21 +50,18 @@
       --blue-primary: oklch(0.424 0.199 265.638);
     }
 
-    /* ── Utility layer (from the provided snippet) ─────────────────────── */
     @layer utilities {
       .align-left    { text-align: start; }
       .align-center  { text-align: center; }
       .align-right   { text-align: end; }
       .text-light    { color: var(--muted-foreground); }
       .text-lighter  { color: var(--faint-foreground); }
-
       .flex           { display: flex; }
       .flex-col       { flex-direction: column; }
       .items-center   { align-items: center; }
       .justify-center { justify-content: center; }
       .justify-between{ justify-content: space-between; }
       .justify-end    { justify-content: flex-end; }
-
       .hstack {
         display: flex;
         align-items: center;
@@ -82,11 +76,9 @@
         flex-direction: column;
         gap: var(--space-3);
       }
-
       .gap-1 { gap: var(--space-1); }
       .gap-2 { gap: var(--space-2); }
       .gap-4 { gap: var(--space-4); }
-
       .mt-2 { margin-block-start: var(--space-2); }
       .mt-4 { margin-block-start: var(--space-4); }
       .mt-6 { margin-block-start: var(--space-6); }
@@ -95,7 +87,6 @@
       .mb-6 { margin-block-end: var(--space-6); }
       .p-4  { padding: var(--space-4); }
       .w-100 { width: 100%; }
-
       :is(ul, ol, a).unstyled {
         list-style: none;
         text-decoration: none;
@@ -103,7 +94,6 @@
       }
     }
 
-    /* ── Global tweaks ──────────────────────────────────────────────────── */
     body {
       background: var(--background);
       color: var(--foreground);
@@ -126,14 +116,12 @@
       letter-spacing: -0.01em;
     }
 
-    /* EB Garamond looks better slightly larger for body copy */
     p, li, .feature-card p, .mode-card ul, .section-sub, .hero p {
       font-family: "EB Garamond", Georgia, serif;
       font-size: 1.08rem;
       line-height: 1.75;
     }
 
-    /* Keep terminal/code areas in monospace */
     .terminal, .terminal-body, .install-step pre, kbd, code, pre {
       font-family: "Departure Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
     }
@@ -406,6 +394,95 @@
       margin: 0;
     }
 
+    /* ── Providers section ──────────────────────────────────────────────── */
+    .providers-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    @media (max-width: 640px) {
+      .providers-grid { grid-template-columns: 1fr; }
+    }
+    .provider-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+    }
+    .provider-card.cerebras { border-color: oklch(0.424 0.199 265.638 / 35%); }
+    .provider-card.nvidia { border-color: oklch(0.70 0.18 150 / 35%); }
+    .provider-card h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+    }
+    .provider-card ul {
+      font-size: 0.88rem;
+      color: var(--muted-foreground);
+      line-height: 1.8;
+      padding-left: 1.1rem;
+      margin: 0;
+    }
+    .provider-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    .provider-badge.cerebras { background: oklch(0.424 0.199 265.638 / 20%); color: var(--blue-vivid); }
+    .provider-badge.nvidia { background: oklch(0.50 0.18 150 / 15%); color: oklch(0.70 0.18 150); }
+
+    /* ── Screenshots ────────────────────────────────────────────────────── */
+    .screenshots-scroll {
+      display: flex;
+      gap: 1.5rem;
+      overflow-x: auto;
+      padding: 1rem 0 1.5rem;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+    .screenshots-scroll::-webkit-scrollbar {
+      height: 6px;
+    }
+    .screenshots-scroll::-webkit-scrollbar-track {
+      background: var(--card);
+      border-radius: 3px;
+    }
+    .screenshots-scroll::-webkit-scrollbar-thumb {
+      background: var(--blue-deep);
+      border-radius: 3px;
+    }
+    .screenshot-item {
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--card);
+      transition: border-color 0.2s;
+    }
+    .screenshot-item:hover {
+      border-color: var(--blue-vivid);
+    }
+    .screenshot-item img {
+      display: block;
+      max-width: 700px;
+      width: auto;
+      height: auto;
+    }
+    .screenshot-caption {
+      padding: 0.75rem 1rem;
+      font-size: 0.82rem;
+      color: var(--muted-foreground);
+      font-family: "Departure Mono", monospace;
+    }
+
     /* ── Download / curl section ────────────────────────────────────────── */
     .download-box {
       background: oklch(0.10 0.005 285.823);
@@ -584,25 +661,25 @@
   <a href="#" class="logo">otask<span>/ AI coding agent</span></a>
   <div class="nav-links hstack">
     <a href="#features" class="ghost button small">Features</a>
+    <a href="#screenshots" class="ghost button small">Screenshots</a>
     <a href="#install" class="ghost button small">Install</a>
-    <a href="https://github.com" class="button small outline">GitHub</a>
+    <a href="https://otask--saifcore7.replit.app/" class="button small outline">GitHub</a>
   </div>
 </nav>
 
 <!-- ── Hero ────────────────────────────────────────────────────────────── -->
 <section class="hero">
-  <div class="hero-badge">⚡ Powered by Cerebras · 3 000 tokens/s</div>
+  <div class="hero-badge">⚡ Powered by Cerebras & NVIDIA · Up to 3 000 tokens/s</div>
   <h1>
     A <span class="accent">terminal-native</span><br/>
     AI coding agent
   </h1>
-  <p class="hero-meta">An AI agent built using an AI agent.</p>
+  <p class="hero-meta">An AI agent built using an AI agent — conceived, planned, and coded from the first line.</p>
   <p>
-    otask is a blazing-fast TUI coding assistant built in Rust — conceived,
-    planned, and coded with the help of AI from the very first line.
-    Plan with real-time web search. Edit files with precision tool-calling.
-    Switch between Cerebras and NVIDIA providers on the fly.
-    Never leave your terminal.
+    otask is a blazing-fast TUI coding assistant built in Rust. Plan with real-time web search.
+    Edit files with precision tool-calling. Attach files with @-mentions. Switch between Cerebras
+    and NVIDIA providers on the fly. Full vim-style editor, file tree explorer, and markdown rendering —
+    all without leaving your terminal.
   </p>
   <div class="hero-actions">
     <a href="#install" class="button large">Get Started</a>
@@ -624,22 +701,22 @@
 
 <span class="t-muted">ai   </span><span class="t-bold t-lblue">## Async Runtimes in Rust (2025)</span>
 
-     <span class="t-rule">─────────────────────────────────────────────</span>
-     <span class="t-muted">[web search: best rust async runtimes 2025]</span>
-     <span class="t-rule">─────────────────────────────────────────────</span>
+      <span class="t-rule">─────────────────────────────────────────────</span>
+      <span class="t-muted">[web search: best rust async runtimes 2025]</span>
+      <span class="t-rule">─────────────────────────────────────────────</span>
 
-     <span class="t-fg t-bold">1. Tokio</span>   <span class="t-dim">tokio.rs</span>
-        <span class="t-muted">&gt; The de-facto standard. 1M+ downloads/week.</span>
+      <span class="t-fg t-bold">1. Tokio</span>   <span class="t-dim">tokio.rs</span>
+         <span class="t-muted">&gt; The de-facto standard. 1M+ downloads/week.</span>
 
-     <span class="t-fg t-bold">2. async-std</span>   <span class="t-dim">async.rs</span>
-        <span class="t-muted">&gt; Std-compatible API, great for beginners.</span>
+      <span class="t-fg t-bold">2. async-std</span>   <span class="t-dim">async.rs</span>
+         <span class="t-muted">&gt; Std-compatible API, great for beginners.</span>
 
-     <span class="t-fg t-bold">3. smol</span>   <span class="t-dim">github.com/smol-rs/smol</span>
-        <span class="t-muted">&gt; Ultra-lightweight, ~400 lines of code.</span>
-     <span class="t-rule">─────────────────────────────────────────────</span>
+      <span class="t-fg t-bold">3. smol</span>   <span class="t-dim">github.com/smol-rs/smol</span>
+         <span class="t-muted">&gt; Ultra-lightweight, ~400 lines of code.</span>
+      <span class="t-rule">─────────────────────────────────────────────</span>
 
-     <span class="t-fg">For most projects, </span><span class="t-code">`tokio`</span><span class="t-fg"> is the right choice.</span>
-     <span class="t-fg">Use </span><span class="t-code">`smol`</span><span class="t-fg"> when binary size matters.</span>
+      <span class="t-fg">For most projects, </span><span class="t-code">`tokio`</span><span class="t-fg"> is the right choice.</span>
+      <span class="t-fg">Use </span><span class="t-code">`smol`</span><span class="t-fg"> when binary size matters.</span>
 
 <span class="t-rule">──────────────────────────────────────────────────────────</span>
 <span class="t-plan"> plan </span><span class="t-dim">  · cerebras · gpt-oss-120b  ·  </span><span class="t-amber">max</span><span class="t-dim">          ctrl+k commands</span></div>
@@ -671,10 +748,46 @@
       <h3>Write Code</h3>
       <ul>
         <li>No web search — pure speed</li>
-        <li>Built-in vim-style editor</li>
-        <li>Syntax highlighting (100+ languages)</li>
+        <li>File tool-calling: read, create, edit</li>
+        <li>Up to 10 read → edit → verify cycles</li>
+        <li>Built-in vim-style editor (Ctrl+V)</li>
         <li>Integrated file tree explorer</li>
-        <li>Save &amp; clipboard support</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── Providers ────────────────────────────────────────────────────────── -->
+<section class="section">
+  <div class="section-label">AI Providers</div>
+  <h2 class="section-title">Choose your inference engine</h2>
+  <p class="section-sub">
+    Switch between Cerebras for blazing speed and NVIDIA for free endpoints — at runtime with a single command.
+  </p>
+
+  <div class="providers-grid">
+    <div class="provider-card cerebras">
+      <div class="provider-badge cerebras">Cerebras</div>
+      <h3>Cerebras Inference</h3>
+      <ul>
+        <li>Up to 3 000 tokens/second</li>
+        <li>gpt-oss-120b (default)</li>
+        <li>qwen-3-235b-a22b-instruct-2507</li>
+        <li>llama3.1-8b</li>
+        <li>zai-glm-4.7</li>
+        <li>Tool-calling for web search &amp; file ops</li>
+      </ul>
+    </div>
+    <div class="provider-card nvidia">
+      <div class="provider-badge nvidia">NVIDIA</div>
+      <h3>NVIDIA Inference</h3>
+      <ul>
+        <li>Free endpoints available</li>
+        <li>z-ai/glm-4.7 (with interleaved thinking)</li>
+        <li>meta/llama-3.1-8b-instruct (free)</li>
+        <li>meta/llama-3.3-70b-instruct (free)</li>
+        <li>mistralai/mistral-7b-instruct-v0.3 (free)</li>
+        <li>GLM-4.7 enable_thinking support</li>
       </ul>
     </div>
   </div>
@@ -689,56 +802,138 @@
     <div class="feature-card">
       <span class="feature-icon">🔍</span>
       <h3>Exa AI Web Search</h3>
-      <p>Plan mode automatically searches the web for current docs, library versions, and best practices via Exa's fast search API.</p>
-      <span class="feature-tag">Plan mode only</span>
+      <p>Plan mode automatically searches the web for current docs, library versions, and best practices via Exa's fast search API. Up to 3 rounds per response.</p>
+      <span class="feature-tag">Plan mode</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">⚡</span>
       <h3>Cerebras Speed</h3>
-      <p>Runs exclusively on Cerebras — the world's fastest AI inference. Up to 3 000 tokens/second with gpt-oss-120b.</p>
+      <p>Runs on Cerebras — the world's fastest AI inference. Up to 3 000 tokens/second with gpt-oss-120b for near-instant responses.</p>
       <span class="feature-tag">~3 000 t/s</span>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🟢</span>
+      <h3>NVIDIA Provider</h3>
+      <p>Connect to NVIDIA's free inference endpoints. GLM-4.7 with interleaved thinking, Llama 3.1/3.3, and Mistral 7B — all free.</p>
+      <span class="feature-tag">Free tier</span>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔄</span>
+      <h3>Provider Switching</h3>
+      <p>Switch between Cerebras and NVIDIA at runtime with /connect. No restart needed. Change providers and models on the fly.</p>
+      <span class="feature-tag">Runtime</span>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📦</span>
+      <h3>Model Picker</h3>
+      <p>Interactive model selection overlay with /models. Navigate with j/k, select with Enter. Dynamically shows models for your active provider.</p>
+      <span class="feature-tag">/models</span>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">@</span>
+      <h3>@-Mention File Picker</h3>
+      <p>Type @ in the input to open a fuzzy file picker. Scan your project, filter files, and attach their contents to your message with one keypress.</p>
+      <span class="feature-tag">Ctrl+F</span>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📎</span>
+      <h3>File Attachment</h3>
+      <p>Attach files, directories, or images to your prompts. Content is injected with clear delimiters so the AI has full context.</p>
+      <span class="feature-tag">Any file</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">✏️</span>
       <h3>Built-in Vim Editor</h3>
-      <p>Open any file with Ctrl+V. Full vim keybindings — normal, insert, command modes. Save with <code>:w</code>, quit with <code>:q</code>.</p>
+      <p>Open any file with Ctrl+V. Full vim keybindings — normal, insert, command modes. Save with :w, quit with :q. Dirty tracking with [+] indicator.</p>
       <span class="feature-tag">Ctrl+V</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">🌲</span>
       <h3>File Tree Explorer</h3>
-      <p>Navigate your project with a sidebar file tree. Toggle with Ctrl+E, switch focus with Tab. Open files with Enter.</p>
+      <p>Navigate your project with a sidebar file tree. Toggle with Ctrl+E, switch focus with Tab. Expand/collapse dirs, open files with Enter.</p>
       <span class="feature-tag">Ctrl+E</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">🎨</span>
       <h3>Syntax Highlighting</h3>
-      <p>Code in the editor is highlighted via syntect — 100+ languages, accurate grammar-based tokenisation, zero flicker.</p>
+      <p>Code in the editor is highlighted via syntect — 100+ languages, accurate grammar-based tokenisation with base16-ocean dark theme, zero flicker.</p>
       <span class="feature-tag">100+ langs</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">📋</span>
       <h3>Markdown Rendering</h3>
-      <p>AI responses render headings, bold, code blocks, lists, and tables with box-drawing borders — right in the terminal.</p>
+      <p>AI responses render headings, bold, code blocks, lists, tables with box-drawing borders, blockquotes, links, and strikethrough — right in the terminal.</p>
       <span class="feature-tag">Full tables</span>
     </div>
     <div class="feature-card">
-      <span class="feature-icon">📎</span>
+      <span class="feature-icon">📋</span>
       <h3>Clipboard &amp; Save</h3>
-      <p>Press <kbd>y</kbd> to yank the last AI response to your clipboard, or <kbd>s</kbd> to save it as a markdown file.</p>
+      <p>Press y to yank the last AI response to your clipboard, or s to save it as a markdown file. Fallback to file save if clipboard unavailable.</p>
       <span class="feature-tag">y / s</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">⌨️</span>
       <h3>Command Palette</h3>
-      <p>Press Ctrl+K at any time to open a searchable command palette with every keybinding and slash command listed.</p>
+      <p>Press Ctrl+K at any time to open a searchable command palette with every keybinding, slash command, and action listed in organized sections.</p>
       <span class="feature-tag">Ctrl+K</span>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🛠️</span>
+      <h3>File Tool-Calling</h3>
+      <p>Edit mode uses read_file, create_file, and edit_file tools. Up to 10 read → edit → verify cycles. Auto-creates parent directories.</p>
+      <span class="feature-tag">Edit mode</span>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🧠</span>
+      <h3>GLM-4.7 Thinking</h3>
+      <p>NVIDIA's GLM-4.7 model supports interleaved thinking with enable_thinking and clear_thinking flags for deeper reasoning.</p>
+      <span class="feature-tag">NVIDIA only</span>
     </div>
     <div class="feature-card">
       <span class="feature-icon">🦀</span>
       <h3>Written in Rust</h3>
-      <p>Built with Ratatui + Crossterm. Minimal binary, zero heap bloat, instant startup — no Electron, no Node, no Python.</p>
+      <p>Built with Ratatui + Crossterm + Tokio. Minimal binary, zero heap bloat, instant startup — no Electron, no Node, no Python.</p>
       <span class="feature-tag">Ratatui + Tokio</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── Screenshots ──────────────────────────────────────────────────────── -->
+<section class="section" id="screenshots">
+  <div class="section-label">Screenshots</div>
+  <h2 class="section-title">See it in action</h2>
+  <p class="section-sub">
+    Real terminal sessions showing plan mode, edit mode, the vim editor, file tree, and more.
+  </p>
+
+  <div class="screenshots-scroll">
+    <div class="screenshot-item">
+      <img src="Screenshot_20260502_211858_1777736976732.png" alt="otask terminal session" />
+      <div class="screenshot-caption">Plan mode with web search</div>
+    </div>
+    <div class="screenshot-item">
+      <img src="Screenshot_20260503_170918_1777827837717.png" alt="otask edit mode" />
+      <div class="screenshot-caption">Edit mode with file tool-calling</div>
+    </div>
+    <div class="screenshot-item">
+      <img src="Screenshot_20260503_171120_1777827837718.png" alt="otask vim editor" />
+      <div class="screenshot-caption">Built-in vim-style editor</div>
+    </div>
+    <div class="screenshot-item">
+      <img src="Screenshot_20260503_171139_1777827837719.png" alt="otask file tree" />
+      <div class="screenshot-caption">File tree explorer</div>
+    </div>
+    <div class="screenshot-item">
+      <img src="Screenshot_20260503_171152_1777827837721.png" alt="otask command palette" />
+      <div class="screenshot-caption">Command palette (Ctrl+K)</div>
+    </div>
+    <div class="screenshot-item">
+      <img src="Screenshot_20260503_171232_1777827837719.png" alt="otask model picker" />
+      <div class="screenshot-caption">Model picker</div>
+    </div>
+    <div class="screenshot-item">
+      <img src="Screenshot_20260503_171308_1777827837720.png" alt="otask file attachment" />
+      <div class="screenshot-caption">@-mention file picker</div>
     </div>
   </div>
 </section>
@@ -757,6 +952,7 @@
     <div class="kbd-row"><span>Command palette</span><kbd>Ctrl+K</kbd></div>
     <div class="kbd-row"><span>Open editor</span><kbd>Ctrl+V</kbd></div>
     <div class="kbd-row"><span>File tree</span><kbd>Ctrl+E</kbd></div>
+    <div class="kbd-row"><span>File picker (@)</span><kbd>Ctrl+F</kbd></div>
     <div class="kbd-row"><span>New session</span><kbd>Ctrl+N</kbd></div>
     <div class="kbd-row"><span>Copy response</span><kbd>y</kbd></div>
     <div class="kbd-row"><span>Save response</span><kbd>s</kbd></div>
@@ -841,7 +1037,7 @@ cargo build --release
 <footer class="site-footer">
   <p>
     Built with <a href="https://github.com/ratatui/ratatui">Ratatui</a> ·
-    Powered by <a href="https://cerebras.ai">Cerebras</a> ·
+    Powered by <a href="https://cerebras.ai">Cerebras</a> &amp; <a href="https://nvidia.com">NVIDIA</a> ·
     Search by <a href="https://exa.ai">Exa AI</a>
   </p>
   <p class="mt-2" style="color: var(--faint-foreground); font-size:0.78rem;">
