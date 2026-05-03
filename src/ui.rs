@@ -484,28 +484,16 @@ fn draw_file_picker(f: &mut Frame, app: &App, area: Rect) {
     for (i, name) in picker.filtered.iter().enumerate() {
         let is_sel = i == sel;
         let kind = file_kind(name);
-
-        let (badge_text, badge_fg, badge_bg, name_fg) = match kind {
-            FileKind::Dir   => (" dir ", BG, Color::Rgb(100, 160, 255), Color::Rgb(140, 190, 255)),
-            FileKind::Image => (" img ", BG, Color::Rgb(80, 200, 120),  Color::Rgb(80, 200, 120)),
-            FileKind::File  => (" file", BG, Color::Rgb(70, 70, 70),    FG),
+        let (icon, idle_fg) = match kind {
+            FileKind::Dir   => ("▸ ", Color::Rgb(100, 160, 255)),
+            FileKind::Image => ("⬡ ", Color::Rgb(80, 200, 120)),
+            FileKind::File  => ("  ", FG),
         };
-
-        let row_bg = if is_sel { Color::Rgb(25, 35, 55) } else { OVERLAY_BG };
-
-        // badge stays its type color; name area gets row_bg when selected
-        let name_text = format!("  {}  ", name);
-        let name_padded = format!(
-            "{:<width$}",
-            name_text,
-            width = (inner.width as usize).saturating_sub(badge_text.len() + 3)
-        );
-
-        lines.push(Line::from(vec![
-            Span::styled(badge_text, Style::default().fg(badge_fg).bg(badge_bg).add_modifier(Modifier::BOLD)),
-            Span::styled(" │", Style::default().fg(Color::Rgb(50, 50, 50)).bg(row_bg)),
-            Span::styled(name_padded, Style::default().fg(if is_sel { Color::Rgb(220, 220, 220) } else { name_fg }).bg(row_bg)),
-        ]));
+        let bg = if is_sel { idle_fg } else { OVERLAY_BG };
+        let fg = if is_sel { BG } else { idle_fg };
+        let label  = format!(" {}{}", icon, name);
+        let padded = format!("{:<width$}", label, width = inner.width as usize);
+        lines.push(Line::from(Span::styled(padded, Style::default().fg(fg).bg(bg))));
     }
 
     f.render_widget(
@@ -608,10 +596,13 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
             "user" => {
                 lines.push(Line::from(Span::styled("you  ", Style::default().fg(DIM))));
                 for line in msg.content.lines() {
-                    lines.push(Line::from(vec![
-                        Span::styled("     ", Style::default().fg(DIM)),
-                        Span::styled(line, Style::default().fg(FG)),
-                    ]));
+                    // skip injected file-content blocks from display
+                    if line.starts_with("--- File:") || line.starts_with("--- End of") {
+                        continue;
+                    }
+                    let mut spans = vec![Span::styled("     ", Style::default().fg(DIM))];
+                    spans.extend(mention_spans(line));
+                    lines.push(Line::from(spans));
                 }
                 lines.push(Line::from(""));
             }
@@ -696,6 +687,55 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
 }
 
 // ─── Input ───────────────────────────────────────────────────────────────────
+
+/// Render a text line replacing `@filename` tokens with typed badge spans.
+/// Used in the chat messages area (no cursor, so width expansion is fine).
+fn mention_spans(text: &str) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        if let Some(at_pos) = remaining.find('@') {
+            if at_pos > 0 {
+                spans.push(Span::styled(
+                    remaining[..at_pos].to_string(),
+                    Style::default().fg(FG),
+                ));
+            }
+            let after = &remaining[at_pos + 1..];
+            let word_end = after
+                .find(|c: char| c == ' ' || c == '\t')
+                .unwrap_or(after.len());
+            let fname = &after[..word_end];
+            if !fname.is_empty() {
+                let kind = file_kind(fname);
+                let (badge_label, badge_bg) = match kind {
+                    FileKind::Dir   => (" dir ", Color::Rgb(100, 160, 255)),
+                    FileKind::Image => (" img ", Color::Rgb(80, 200, 120)),
+                    FileKind::File  => (" file", Color::Rgb(70, 70, 70)),
+                };
+                spans.push(Span::styled(
+                    badge_label,
+                    Style::default().fg(BG).bg(badge_bg).add_modifier(Modifier::BOLD),
+                ));
+                spans.push(Span::styled(
+                    " │ ",
+                    Style::default().fg(Color::Rgb(55, 55, 55)),
+                ));
+                spans.push(Span::styled(
+                    fname.to_string(),
+                    Style::default().fg(Color::Rgb(200, 200, 200)),
+                ));
+            } else {
+                spans.push(Span::styled("@".to_string(), Style::default().fg(ACCENT)));
+            }
+            remaining = &after[word_end..];
+        } else {
+            spans.push(Span::styled(remaining.to_string(), Style::default().fg(FG)));
+            break;
+        }
+    }
+    spans
+}
 
 fn render_input_with_mentions(input: &str) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
