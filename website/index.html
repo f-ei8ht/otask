@@ -398,6 +398,81 @@
       margin: 0;
     }
 
+    /* ── Download / curl section ────────────────────────────────────────── */
+    .download-box {
+      background: oklch(0.10 0.005 285.823);
+      border: 1px solid oklch(0.424 0.199 265.638 / 40%);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    .download-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .download-tab {
+      flex: 1;
+      padding: 0.65rem 1rem;
+      font-family: "Departure Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-align: center;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+      letter-spacing: 0.04em;
+    }
+    .download-tab.active {
+      color: var(--blue-bright);
+      border-bottom-color: var(--blue-vivid);
+    }
+    .download-panel { display: none; padding: 1.5rem 1.75rem; }
+    .download-panel.active { display: block; }
+    .curl-line {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: oklch(0.15 0.005 285);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .curl-line pre {
+      flex: 1;
+      margin: 0;
+      font-size: 0.78rem;
+      color: var(--blue-bright);
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .copy-btn {
+      flex-shrink: 0;
+      background: oklch(0.424 0.199 265.638 / 20%);
+      border: 1px solid oklch(0.424 0.199 265.638 / 35%);
+      color: var(--blue-bright);
+      font-family: "Departure Mono", ui-monospace, monospace;
+      font-size: 0.72rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .copy-btn:hover { background: oklch(0.424 0.199 265.638 / 35%); }
+    .curl-note {
+      font-size: 0.83rem;
+      color: var(--muted-foreground);
+      font-family: "EB Garamond", serif;
+      margin: 0;
+    }
+    .platform-icon { font-size: 1rem; }
+
     /* ── Install section ────────────────────────────────────────────────── */
     .install-card {
       background: oklch(0.10 0.005 285.823);
@@ -682,33 +757,60 @@
 <!-- ── Install ───────────────────────────────────────────────────────────── -->
 <section class="section" id="install">
   <div class="section-label">Installation</div>
-  <h2 class="section-title">Up and running in seconds</h2>
-  <p class="section-sub">Requires Rust 1.75+ and a Cerebras API key.</p>
+  <h2 class="section-title">One line to install</h2>
+  <p class="section-sub">Download a pre-built binary with curl, or build from source with Cargo.</p>
 
+  <!-- Download box with platform tabs -->
+  <div class="download-box">
+    <div class="download-tabs">
+      <button class="download-tab active" onclick="switchTab('linux')">🐧 Linux x86_64</button>
+      <button class="download-tab" onclick="switchTab('mac-arm')">🍎 macOS arm64</button>
+      <button class="download-tab" onclick="switchTab('mac-x86')">🍎 macOS x86_64</button>
+    </div>
+
+    <div class="download-panel active" id="tab-linux">
+      <div class="curl-line">
+        <pre id="cmd-linux">curl -fsSL https://github.com/saifcore7/otask/releases/latest/download/otask-linux-x86_64 -o ~/.local/bin/otask && chmod +x ~/.local/bin/otask</pre>
+        <button class="copy-btn" onclick="copyCmd('cmd-linux', this)">copy</button>
+      </div>
+      <p class="curl-note">Downloads the binary to <code>~/.local/bin/otask</code>. Make sure <code>~/.local/bin</code> is in your <code>$PATH</code>.</p>
+    </div>
+
+    <div class="download-panel" id="tab-mac-arm">
+      <div class="curl-line">
+        <pre id="cmd-mac-arm">curl -fsSL https://github.com/saifcore7/otask/releases/latest/download/otask-macos-arm64 -o /usr/local/bin/otask && chmod +x /usr/local/bin/otask</pre>
+        <button class="copy-btn" onclick="copyCmd('cmd-mac-arm', this)">copy</button>
+      </div>
+      <p class="curl-note">For Apple Silicon (M1 / M2 / M3). Downloads to <code>/usr/local/bin/otask</code> — already in your <code>$PATH</code>.</p>
+    </div>
+
+    <div class="download-panel" id="tab-mac-x86">
+      <div class="curl-line">
+        <pre id="cmd-mac-x86">curl -fsSL https://github.com/saifcore7/otask/releases/latest/download/otask-macos-x86_64 -o /usr/local/bin/otask && chmod +x /usr/local/bin/otask</pre>
+        <button class="copy-btn" onclick="copyCmd('cmd-mac-x86', this)">copy</button>
+      </div>
+      <p class="curl-note">For Intel Macs. Downloads to <code>/usr/local/bin/otask</code> — already in your <code>$PATH</code>.</p>
+    </div>
+  </div>
+
+  <!-- First run steps -->
   <div class="install-card">
     <div class="install-step">
       <div class="install-num">1</div>
       <div class="w-100">
-        <h4>Clone the repository</h4>
-        <pre>git clone https://github.com/yourname/otask && cd otask</pre>
+        <h4>Optionally add your Exa API key (enables web search in Plan mode)</h4>
+        <pre>echo "EXA_API_KEY=your_key_here" >> ~/.config/otask/.env</pre>
       </div>
     </div>
     <div class="install-step">
       <div class="install-num">2</div>
       <div class="w-100">
-        <h4>Add your Exa API key</h4>
-        <pre>echo "EXA_API_KEY=your_key_here" > .env</pre>
+        <h4>Run otask</h4>
+        <pre>otask</pre>
       </div>
     </div>
     <div class="install-step">
       <div class="install-num">3</div>
-      <div class="w-100">
-        <h4>Build and run</h4>
-        <pre>cargo build --release && ./target/release/otask</pre>
-      </div>
-    </div>
-    <div class="install-step">
-      <div class="install-num">4</div>
       <div class="w-100">
         <h4>Connect your Cerebras key and start chatting</h4>
         <pre>/connect cerebras YOUR_CEREBRAS_KEY
@@ -718,6 +820,24 @@ What should I use for async Rust in 2025?</pre>
       </div>
     </div>
   </div>
+
+  <!-- Build from source -->
+  <details style="margin-top:1.5rem;">
+    <summary style="font-family:'Departure Mono',monospace;font-size:0.85rem;color:var(--muted-foreground);cursor:pointer;padding:0.5rem 0;">
+      Build from source instead
+    </summary>
+    <div class="install-card" style="margin-top:1rem;">
+      <div class="install-step">
+        <div class="install-num">1</div>
+        <div class="w-100">
+          <h4>Clone and build</h4>
+          <pre>git clone https://github.com/saifcore7/otask && cd otask
+cargo build --release
+./target/release/otask</pre>
+        </div>
+      </div>
+    </div>
+  </details>
 </section>
 
 <!-- ── Footer ────────────────────────────────────────────────────────────── -->
@@ -732,5 +852,22 @@ What should I use for async Rust in 2025?</pre>
   </p>
 </footer>
 
+<script>
+  function switchTab(platform) {
+    document.querySelectorAll('.download-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.download-panel').forEach(p => p.classList.remove('active'));
+    const panels = { linux: 'tab-linux', 'mac-arm': 'tab-mac-arm', 'mac-x86': 'tab-mac-x86' };
+    document.getElementById(panels[platform]).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+
+  function copyCmd(id, btn) {
+    const text = document.getElementById(id).textContent.trim();
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'copied!';
+      setTimeout(() => btn.textContent = 'copy', 2000);
+    });
+  }
+</script>
 </body>
 </html>
