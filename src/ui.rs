@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
 const BG: Color = Color::Rgb(0, 0, 0);
@@ -42,10 +42,11 @@ pub fn draw(f: &mut Frame, app: &App) {
     } else {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(3)])
+            .constraints([Constraint::Min(1), Constraint::Length(1), Constraint::Length(3)])
             .split(area);
         draw_messages(f, app, chunks[0]);
-        draw_input(f, app, chunks[1]);
+        draw_footer(f, app, chunks[1]);
+        draw_input(f, app, chunks[2]);
     }
 
     match app.overlay {
@@ -582,11 +583,61 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
 
 // ─── Messages ────────────────────────────────────────────────────────────────
 
+/// Word-wrap paragraph text in a markdown string to `max_w` chars per line.
+/// Code fences, headings, blockquotes, list items and blank lines are left as-is.
+fn pre_wrap_markdown(md: &str, max_w: usize) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    for line in md.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_code = !in_code;
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        if in_code
+            || trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with('>')
+            || trimmed.starts_with("- ")
+            || trimmed.starts_with("* ")
+            || trimmed.starts_with("+ ")
+            || (trimmed.len() > 2 && trimmed.as_bytes()[0].is_ascii_digit() && trimmed.as_bytes()[1] == b'.')
+        {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        // Word-wrap this paragraph line
+        let mut col = 0usize;
+        for word in line.split_whitespace() {
+            let w = word.chars().count();
+            if col > 0 && col + 1 + w > max_w {
+                out.push('\n');
+                col = 0;
+            }
+            if col > 0 {
+                out.push(' ');
+                col += 1;
+            }
+            out.push_str(word);
+            col += w;
+        }
+        out.push('\n');
+    }
+    out
+}
+
 fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
+    let pad = (area.width / 6).min(8);
+    let content_w = area.width.saturating_sub(2 * pad + 1); // +1 for scrollbar
+    let text_w = content_w.saturating_sub(5).max(20) as usize; // minus "     " prefix
+
     let content_area = Rect {
-        x: area.x + (area.width / 6).min(8),
+        x: area.x + pad,
         y: area.y,
-        width: area.width - 2 * (area.width / 6).min(8),
+        width: content_w,
         height: area.height,
     };
 
@@ -596,13 +647,16 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
             "user" => {
                 lines.push(Line::from(Span::styled("you  ", Style::default().fg(DIM))));
                 for line in msg.content.lines() {
-                    // skip injected file-content blocks from display
                     if line.starts_with("--- File:") || line.starts_with("--- End of") {
                         continue;
                     }
-                    let mut spans = vec![Span::styled("     ", Style::default().fg(DIM))];
-                    spans.extend(mention_spans(line));
-                    lines.push(Line::from(spans));
+                    // manual word-wrap for user lines
+                    let plain: String = line.chars().collect();
+                    for wrapped in word_wrap_str(&plain, text_w) {
+                        let mut spans = vec![Span::styled("     ", Style::default().fg(DIM))];
+                        spans.extend(mention_spans(&wrapped));
+                        lines.push(Line::from(spans));
+                    }
                 }
                 lines.push(Line::from(""));
             }
@@ -611,7 +665,8 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
                 let lc = if is_focused { ACCENT } else { MUTED };
                 let label = if is_focused { "ai ◀" } else { "ai" };
                 lines.push(Line::from(Span::styled(format!("{:<5}", label), Style::default().fg(lc))));
-                let md = md_to_text(&msg.content);
+                let prepped = pre_wrap_markdown(&msg.content, text_w);
+                let md = md_to_text(&prepped);
                 for md_line in md.lines {
                     let mut spans = vec![Span::styled("     ", Style::default().fg(DIM))];
                     spans.extend(md_line.spans);
@@ -620,10 +675,12 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
                 lines.push(Line::from(""));
             }
             "error" => {
-                lines.push(Line::from(vec![
-                    Span::styled("err  ", Style::default().fg(RED)),
-                    Span::styled(&msg.content, Style::default().fg(RED)),
-                ]));
+                for wrapped in word_wrap_str(&msg.content, text_w) {
+                    lines.push(Line::from(vec![
+                        Span::styled("err  ", Style::default().fg(RED)),
+                        Span::styled(wrapped, Style::default().fg(RED)),
+                    ]));
+                }
                 lines.push(Line::from(""));
             }
             _ => {}
@@ -640,8 +697,6 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
     let total = lines.len();
     let visible = content_area.height as usize;
     let bottom = total.saturating_sub(visible);
-
-    // Persist bottom position so scroll_up can move smoothly from the bottom
     app.bottom_hint.set(bottom);
 
     let scroll = if app.scroll == usize::MAX {
@@ -651,23 +706,27 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
     };
 
     f.render_widget(
-        Paragraph::new(Text::from(lines))
-            .scroll((scroll as u16, 0))
-            .wrap(Wrap { trim: false }),
+        Paragraph::new(Text::from(lines)).scroll((scroll as u16, 0)),
         content_area,
     );
 
-    draw_footer(f, app, area);
+    // Scrollbar on the right edge of the full area
+    if total > visible {
+        let mut sb_state = ScrollbarState::new(total)
+            .position(scroll)
+            .viewport_content_length(visible);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .thumb_style(Style::default().fg(DIM)),
+            Rect { x: area.x + area.width.saturating_sub(1), y: area.y, width: 1, height: area.height },
+            &mut sb_state,
+        );
+    }
 }
 
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
-    if area.height < 4 { return; }
-    let footer_area = Rect {
-        x: area.x,
-        y: area.y + area.height.saturating_sub(1),
-        width: area.width,
-        height: 1,
-    };
     let (status_text, sc) = if !app.status.is_empty() {
         (format!("· {}  ", app.status), status_color(&app.status))
     } else if let Some(ref name) = app.provider_name {
@@ -682,8 +741,39 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(status_text, Style::default().fg(sc)),
             Span::styled("ctrl+k commands  ctrl+v editor  @ / ctrl+f files  ", Style::default().fg(DIM)),
         ])),
-        footer_area,
+        area,
     );
+}
+
+/// Word-wrap a plain string to `max_w` chars per line, returning owned strings.
+fn word_wrap_str(text: &str, max_w: usize) -> Vec<String> {
+    if text.chars().count() <= max_w {
+        return vec![text.to_string()];
+    }
+    let mut rows = vec![];
+    let mut col = 0usize;
+    let mut row = String::new();
+    for word in text.split_whitespace() {
+        let w = word.chars().count();
+        if col > 0 && col + 1 + w > max_w {
+            rows.push(row.clone());
+            row.clear();
+            col = 0;
+        }
+        if col > 0 {
+            row.push(' ');
+            col += 1;
+        }
+        row.push_str(word);
+        col += w;
+    }
+    if !row.is_empty() {
+        rows.push(row);
+    }
+    if rows.is_empty() {
+        rows.push(String::new());
+    }
+    rows
 }
 
 // ─── Input ───────────────────────────────────────────────────────────────────
