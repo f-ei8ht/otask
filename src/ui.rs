@@ -8,8 +8,9 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap},
 };
+use tui_scrollbar::{ScrollBar, ScrollLengths};
 
 const BG: Color = Color::Rgb(0, 0, 0);
 const FG: Color = Color::Rgb(220, 220, 220);
@@ -537,7 +538,7 @@ fn draw_model_picker(f: &mut Frame, app: &App, area: Rect) {
     let current_model = if is_nvidia {
         app.provider_name.as_deref()
             .and_then(|n| n.strip_prefix("nvidia · "))
-            .unwrap_or("z-ai/glm-4.7")
+            .unwrap_or("z-ai/glm4.7")
     } else {
         app.cerebras_model.as_deref().unwrap_or("gpt-oss-120b")
     };
@@ -642,61 +643,22 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
 
 // ─── Messages ────────────────────────────────────────────────────────────────
 
-/// Word-wrap paragraph text in a markdown string to `max_w` chars per line.
-/// Code fences, headings, blockquotes, list items and blank lines are left as-is.
-fn pre_wrap_markdown(md: &str, max_w: usize) -> String {
-    let mut out = String::new();
-    let mut in_code = false;
-    for line in md.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
-            in_code = !in_code;
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-        if in_code
-            || trimmed.is_empty()
-            || trimmed.starts_with('#')
-            || trimmed.starts_with('>')
-            || trimmed.starts_with("- ")
-            || trimmed.starts_with("* ")
-            || trimmed.starts_with("+ ")
-            || (trimmed.len() > 2 && trimmed.as_bytes()[0].is_ascii_digit() && trimmed.as_bytes()[1] == b'.')
-        {
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-        // Word-wrap this paragraph line
-        let mut col = 0usize;
-        for word in line.split_whitespace() {
-            let w = word.chars().count();
-            if col > 0 && col + 1 + w > max_w {
-                out.push('\n');
-                col = 0;
-            }
-            if col > 0 {
-                out.push(' ');
-                col += 1;
-            }
-            out.push_str(word);
-            col += w;
-        }
-        out.push('\n');
-    }
-    out
-}
-
 fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
-    let pad = (area.width / 6).min(8);
-    let content_w = area.width.saturating_sub(2 * pad + 1); // +1 for scrollbar
-    let text_w = content_w.saturating_sub(5).max(20) as usize; // minus "     " prefix
+    let pad = (area.width / 8).min(6);
+    let content_w = area.width.saturating_sub(2 * pad + 1); // -1 for scrollbar column
 
     let content_area = Rect {
         x: area.x + pad,
         y: area.y,
         width: content_w,
+        height: area.height,
+    };
+
+    // Scrollbar sits in its own column between content and right padding
+    let bar_area = Rect {
+        x: area.x + pad + content_w,
+        y: area.y,
+        width: 1,
         height: area.height,
     };
 
@@ -711,7 +673,7 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
                     }
                     // manual word-wrap for user lines
                     let plain: String = line.chars().collect();
-                    for wrapped in word_wrap_str(&plain, text_w) {
+                    for wrapped in word_wrap_str(&plain, content_w.saturating_sub(5).max(20) as usize) {
                         let mut spans = vec![Span::styled("     ", Style::default().fg(DIM))];
                         spans.extend(mention_spans(&wrapped));
                         lines.push(Line::from(spans));
@@ -724,8 +686,8 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
                 let lc = if is_focused { ACCENT } else { MUTED };
                 let label = if is_focused { "ai ◀" } else { "ai" };
                 lines.push(Line::from(Span::styled(format!("{:<5}", label), Style::default().fg(lc))));
-                let prepped = pre_wrap_markdown(&msg.content, text_w);
-                let md = md_to_text(&prepped);
+                let text_w = content_w.saturating_sub(5).max(20) as usize;
+                let md = md_to_text(&msg.content, text_w);
                 for md_line in md.lines {
                     let mut spans = vec![Span::styled("     ", Style::default().fg(DIM))];
                     spans.extend(md_line.spans);
@@ -734,7 +696,7 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
                 lines.push(Line::from(""));
             }
             "error" => {
-                for wrapped in word_wrap_str(&msg.content, text_w) {
+                for wrapped in word_wrap_str(&msg.content, content_w.saturating_sub(5).max(20) as usize) {
                     lines.push(Line::from(vec![
                         Span::styled("err  ", Style::default().fg(RED)),
                         Span::styled(wrapped, Style::default().fg(RED)),
@@ -755,33 +717,39 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
 
     let total = lines.len();
     let visible = content_area.height as usize;
-    let bottom = total.saturating_sub(visible);
-    app.bottom_hint.set(bottom);
+    let max_scroll = total.saturating_sub(visible);
 
-    let scroll = if app.scroll == usize::MAX {
-        bottom
+    // Update max_scroll in app so scroll_up knows the current bottom
+    app.max_scroll.set(max_scroll);
+
+    // Auto-scroll to bottom if flag is set
+    let scroll = if app.auto_scroll.get() {
+        max_scroll
     } else {
-        app.scroll.min(bottom)
+        app.scroll.min(max_scroll)
     };
 
+    // Re-enable auto-scroll if user scrolled to bottom
+    if !app.auto_scroll.get() && scroll == max_scroll {
+        app.auto_scroll.set(true);
+    }
+
     f.render_widget(
-        Paragraph::new(Text::from(lines)).scroll((scroll as u16, 0)),
+        Paragraph::new(Text::from(lines))
+            .scroll((scroll as u16, 0))
+            .wrap(Wrap { trim: true }),
         content_area,
     );
 
-    // Scrollbar on the right edge of the full area
+    // Scrollbar using tui-scrollbar with fractional thumb rendering
     if total > visible {
-        let mut sb_state = ScrollbarState::new(total)
-            .position(scroll)
-            .viewport_content_length(visible);
-        f.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(None)
-                .end_symbol(None)
-                .thumb_style(Style::default().fg(DIM)),
-            Rect { x: area.x + area.width.saturating_sub(1), y: area.y, width: 1, height: area.height },
-            &mut sb_state,
-        );
+        let lengths = ScrollLengths {
+            content_len: total,
+            viewport_len: visible,
+        };
+        let scrollbar = ScrollBar::vertical(lengths)
+            .offset(scroll);
+        (&scrollbar).render(bar_area, f.buffer_mut());
     }
 }
 

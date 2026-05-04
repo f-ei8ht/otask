@@ -14,7 +14,7 @@ impl NvidiaProvider {
         Self {
             api_key,
             client: Client::new(),
-            model: model.unwrap_or_else(|| "z-ai/glm-4.7".to_string()),
+            model: model.unwrap_or_else(|| "z-ai/glm4.7".to_string()),
         }
     }
 }

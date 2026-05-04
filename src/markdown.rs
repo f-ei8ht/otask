@@ -1,4 +1,4 @@
-use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
@@ -18,8 +18,11 @@ const TABLE_BORDER: Color = Color::Rgb(60, 65, 90);
 const TABLE_HEADER: Color = Color::Rgb(140, 180, 255);
 const TABLE_FG: Color = Color::Rgb(200, 205, 220);
 
-pub fn md_to_text(md: &str) -> Text<'static> {
-    let parser = Parser::new(md);
+pub fn md_to_text(md: &str, wrap_width: usize) -> Text<'static> {
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let parser = Parser::new_ext(md, options);
 
     let mut lines: Vec<Line<'static>> = vec![];
     let mut current: Vec<Span<'static>> = vec![];
@@ -47,8 +50,9 @@ pub fn md_to_text(md: &str) -> Text<'static> {
                     current_cell.push_str(&text);
                 } else if in_code_block {
                     for line in text.lines() {
+                        let wrapped = wrap_code_line(line, wrap_width);
                         lines.push(Line::from(vec![Span::styled(
-                            format!("  {}", line),
+                            format!("  {}", wrapped),
                             Style::default().fg(CODE_FG).bg(CODE_BG),
                         )]));
                     }
@@ -81,7 +85,7 @@ pub fn md_to_text(md: &str) -> Text<'static> {
             Event::End(TagEnd::Table) => {
                 in_table = false;
                 in_table_cell = false;
-                lines.extend(render_table(&table_rows, head_row_count));
+                lines.extend(render_table(&table_rows, head_row_count, wrap_width));
                 lines.push(Line::raw(""));
             }
 
@@ -130,17 +134,12 @@ pub fn md_to_text(md: &str) -> Text<'static> {
                         .fg(HEADING3)
                         .add_modifier(Modifier::BOLD),
                 };
-                let prefix = match level {
-                    HeadingLevel::H1 => "# ",
-                    HeadingLevel::H2 => "## ",
-                    HeadingLevel::H3 => "### ",
-                    _ => "#### ",
-                };
-                current.push(Span::styled(prefix.to_string(), style));
             }
             Event::End(TagEnd::Heading(_)) => {
                 if !current.is_empty() {
-                    lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                    let raw: String = current.iter().map(|s| s.content.as_ref()).collect();
+                    lines.extend(wrap_line(&raw, style, wrap_width));
+                    current.clear();
                 }
                 lines.push(Line::raw(""));
                 style = Style::default().fg(FG);
@@ -215,7 +214,9 @@ pub fn md_to_text(md: &str) -> Text<'static> {
             }
             Event::End(TagEnd::Item) => {
                 if !current.is_empty() {
-                    lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                    let raw: String = current.iter().map(|s| s.content.as_ref()).collect();
+                    lines.extend(wrap_line(&raw, style, wrap_width));
+                    current.clear();
                 }
             }
 
@@ -231,7 +232,9 @@ pub fn md_to_text(md: &str) -> Text<'static> {
             }
             Event::End(TagEnd::BlockQuote) => {
                 if !current.is_empty() {
-                    lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                    let raw: String = current.iter().map(|s| s.content.as_ref()).collect();
+                    lines.extend(wrap_line(&raw, style, wrap_width));
+                    current.clear();
                 }
                 lines.push(Line::raw(""));
                 style = Style::default().fg(FG);
@@ -256,23 +259,31 @@ pub fn md_to_text(md: &str) -> Text<'static> {
             // ── Paragraphs / breaks ───────────────────────────────────────────
             Event::End(TagEnd::Paragraph) => {
                 if !current.is_empty() {
-                    lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                    let raw: String = current.iter().map(|s| s.content.as_ref()).collect();
+                    lines.extend(wrap_line(&raw, style, wrap_width));
+                    current.clear();
                 }
                 lines.push(Line::raw(""));
             }
             Event::SoftBreak => {
                 if !current.is_empty() {
-                    lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                    let raw: String = current.iter().map(|s| s.content.as_ref()).collect();
+                    lines.extend(wrap_line(&raw, style, wrap_width));
+                    current.clear();
                 }
             }
             Event::HardBreak => {
-                lines.push(Line::from(current.drain(..).collect::<Vec<_>>()));
+                if !current.is_empty() {
+                    let raw: String = current.iter().map(|s| s.content.as_ref()).collect();
+                    lines.extend(wrap_line(&raw, style, wrap_width));
+                    current.clear();
+                }
             }
 
             // ── Horizontal rule ───────────────────────────────────────────────
             Event::Rule => {
                 lines.push(Line::from(vec![Span::styled(
-                    "─".repeat(60),
+                    "─".repeat(wrap_width.min(60)),
                     Style::default().fg(RULE_COLOR),
                 )]));
                 lines.push(Line::raw(""));
@@ -283,15 +294,71 @@ pub fn md_to_text(md: &str) -> Text<'static> {
     }
 
     if !current.is_empty() {
-        lines.push(Line::from(current));
+        let raw: String = current.iter().map(|s| s.content.as_ref()).collect();
+        lines.extend(wrap_line(&raw, style, wrap_width));
     }
 
     Text::from(lines)
 }
 
+/// Word-wrap a styled line into multiple ratatui Lines.
+/// Preserves the given style across all wrapped lines.
+fn wrap_line(text: &str, style: Style, wrap_width: usize) -> Vec<Line<'static>> {
+    if text.is_empty() {
+        return vec![Line::raw("")];
+    }
+
+    let mut result = vec![];
+    let mut current_line = String::new();
+    let mut current_width = 0;
+
+    for word in text.split_whitespace() {
+        let w = word.chars().count();
+        if current_width > 0 && current_width + 1 + w > wrap_width {
+            result.push(Line::from(Span::styled(current_line.clone(), style)));
+            current_line.clear();
+            current_width = 0;
+        }
+        if current_width > 0 {
+            current_line.push(' ');
+            current_width += 1;
+        }
+        current_line.push_str(word);
+        current_width += w;
+    }
+    if !current_line.is_empty() {
+        result.push(Line::from(Span::styled(current_line, style)));
+    }
+    if result.is_empty() {
+        result.push(Line::raw(""));
+    }
+    result
+}
+
+/// Truncate or wrap a single code line to fit within wrap_width.
+/// Code can't be word-wrapped without breaking it, so we hard-trim.
+fn wrap_code_line(line: &str, wrap_width: usize) -> String {
+    let max = wrap_width.saturating_sub(2); // reserve for "  " prefix
+    truncate_str(line, max)
+}
+
+/// Truncate a string to max_width chars, adding … if truncated.
+fn truncate_str(s: &str, max_width: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max_width {
+        s.to_string()
+    } else if max_width == 0 {
+        String::new()
+    } else {
+        let mut result: String = chars[..max_width.saturating_sub(1)].iter().collect();
+        result.push('…');
+        result
+    }
+}
+
 // ── Table renderer ────────────────────────────────────────────────────────────
 
-fn render_table(rows: &[Vec<String>], head_rows: usize) -> Vec<Line<'static>> {
+fn render_table(rows: &[Vec<String>], head_rows: usize, wrap_width: usize) -> Vec<Line<'static>> {
     if rows.is_empty() {
         return vec![];
     }
@@ -301,7 +368,7 @@ fn render_table(rows: &[Vec<String>], head_rows: usize) -> Vec<Line<'static>> {
         return vec![];
     }
 
-    // Compute per-column max widths
+    // Compute per-column max widths, capped so total table fits
     let mut col_widths = vec![1usize; col_count];
     for row in rows {
         for (i, cell) in row.iter().enumerate() {
@@ -310,6 +377,29 @@ fn render_table(rows: &[Vec<String>], head_rows: usize) -> Vec<Line<'static>> {
             }
         }
     }
+    // Total table width = 1 (left │) + sum(w+2) + (col_count-1) separators + 1 (right │)
+    // = 3*col_count + sum(w) + (col_count-1) = 4*col_count - 1 + sum(w)
+    // Cap each column proportionally if too wide
+    let total_w: usize = col_widths.iter().sum();
+    let overhead = 4 * col_count + 1;
+    if total_w + overhead > wrap_width {
+        let budget = wrap_width.saturating_sub(overhead);
+        for w in &mut col_widths {
+            *w = (*w * budget / total_w).max(3);
+        }
+    }
+    // Truncate cell contents to fit column widths
+    let mut capped_rows: Vec<Vec<String>> = vec![];
+    for row in rows {
+        let mut capped_row = vec![];
+        for (i, cell) in row.iter().enumerate() {
+            let max_w = col_widths.get(i).copied().unwrap_or(3);
+            let truncated = truncate_str(cell, max_w);
+            capped_row.push(truncated);
+        }
+        capped_rows.push(capped_row);
+    }
+    let rows = &capped_rows;
 
     // Helper: build a horizontal border line given left/mid/right/fill chars
     let h_line = |l: &str, m: &str, r: &str| -> String {

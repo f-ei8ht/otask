@@ -42,10 +42,7 @@ pub const CEREBRAS_MODELS: &[(&str, &str)] = &[
 ];
 
 pub const NVIDIA_MODELS: &[(&str, &str)] = &[
-    ("z-ai/glm-4.7",                       "GLM-4.7  ·  z.ai  (free endpoint)"),
-    ("meta/llama-3.1-8b-instruct",         "Llama 3.1 8B  ·  Meta  (free endpoint)"),
-    ("meta/llama-3.3-70b-instruct",        "Llama 3.3 70B  ·  Meta  (free endpoint)"),
-    ("mistralai/mistral-7b-instruct-v0.3", "Mistral 7B  ·  Mistral  (free endpoint)"),
+    ("z-ai/glm4.7", "GLM-4.7  ·  z.ai  (free endpoint)"),
 ];
 
 /// Return the right model list for the currently active provider.
@@ -104,9 +101,10 @@ pub struct App {
     pub highlighter: Highlighter,
     /// Working directory captured at startup — passed to every file tool call.
     pub cwd: String,
-    /// Last known "bottom" scroll offset, set by the renderer each frame.
-    /// Allows scroll_up to move smoothly from the bottom instead of jumping to top.
-    pub bottom_hint: std::cell::Cell<usize>,
+    /// Max scroll offset computed each frame by the renderer.
+    pub max_scroll: std::cell::Cell<usize>,
+    /// When true, auto-scroll to bottom each frame.
+    pub auto_scroll: std::cell::Cell<bool>,
     /// File picker overlay state.
     pub picker: Option<FilePicker>,
     /// Files attached via @ mention — contents injected into next message.
@@ -134,7 +132,7 @@ impl App {
             )),
             status: String::new(),
             status_flash: None,
-            scroll: usize::MAX,
+            scroll: 0,
             is_loading: false,
             should_quit: false,
             cursor_pos: 0,
@@ -150,7 +148,8 @@ impl App {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string(),
-            bottom_hint: std::cell::Cell::new(0),
+            max_scroll: std::cell::Cell::new(0),
+            auto_scroll: std::cell::Cell::new(true),
             picker: None,
             attached_files: vec![],
             model_picker_idx: 2, // default = gpt-oss-120b (index 2)
@@ -622,21 +621,14 @@ impl App {
     }
 
     fn scroll_down(&mut self, amount: usize) {
-        let from = if self.scroll == usize::MAX {
-            self.bottom_hint.get()
-        } else {
-            self.scroll
-        };
-        self.scroll = from.saturating_add(amount);
+        self.auto_scroll.set(false);
+        self.scroll = self.scroll.saturating_add(amount);
     }
 
     fn scroll_up(&mut self, amount: usize) {
-        let from = if self.scroll == usize::MAX {
-            self.bottom_hint.get()
-        } else {
-            self.scroll
-        };
-        self.scroll = from.saturating_sub(amount);
+        self.auto_scroll.set(false);
+        let current = self.scroll.min(self.max_scroll.get());
+        self.scroll = current.saturating_sub(amount);
     }
 
     fn save_last_response(&mut self) {
@@ -740,16 +732,16 @@ impl App {
             }
             ["/connect", "nvidia", api_key] => {
                 let api_key = api_key.to_string();
-                let model = "z-ai/glm-4.7".to_string();
+                let model = "z-ai/glm4.7".to_string();
                 let provider = Arc::new(NvidiaProvider::new(api_key.clone(), Some(model.clone())));
                 self.provider = Some(provider);
                 self.nvidia_key = Some(api_key);
                 self.cerebras_key = None;
                 self.cerebras_model = None;
-                self.model_picker_idx = 0; // z-ai/glm-4.7 is first in NVIDIA_MODELS
+                self.model_picker_idx = 0; // z-ai/glm4.7 is first in NVIDIA_MODELS
                 self.provider_name = Some(format!("nvidia · {}", model));
                 self.flash_status(
-                    "connected to nvidia · z-ai/glm-4.7 — get free keys at build.nvidia.com".to_string(),
+                    "connected to nvidia · z-ai/glm4.7 — note: nvidia endpoints are slower than cerebras".to_string(),
                 );
                 self.scroll_to_bottom();
             }
@@ -766,7 +758,7 @@ impl App {
                 // sync picker index to current model
                 let models = active_models(self.provider_name.as_deref());
                 let current = self.cerebras_model.as_deref()
-                    .or(self.nvidia_key.as_deref().map(|_| "z-ai/glm-4.7").into())
+                    .or(self.nvidia_key.as_deref().map(|_| "z-ai/glm4.7").into())
                     .unwrap_or("gpt-oss-120b");
                 if let Some(idx) = models.iter().position(|(id, _)| *id == current) {
                     self.model_picker_idx = idx.min(models.len().saturating_sub(1));
@@ -951,7 +943,8 @@ impl App {
         self.messages.clear();
         self.input.clear();
         self.cursor_pos = 0;
-        self.scroll = usize::MAX;
+        self.scroll = 0;
+        self.auto_scroll.set(true);
         self.focused_msg = None;
         self.is_loading = false;
         self.input_mode = InputMode::Normal;
@@ -960,6 +953,6 @@ impl App {
     }
 
     fn scroll_to_bottom(&mut self) {
-        self.scroll = usize::MAX;
+        self.auto_scroll.set(true);
     }
 }
