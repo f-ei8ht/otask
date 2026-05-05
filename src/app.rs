@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::edit_chat::edit_chat;
 use crate::editor::{EditorAction, EditorMode, EditorState};
 use crate::exa::{plan_chat, ExaClient};
@@ -113,11 +114,18 @@ pub struct App {
     pub model_picker_idx: usize,
     /// NVIDIA API key (set via /connect nvidia <key>).
     pub nvidia_key: Option<String>,
+    pub config: Config,
 }
 
 impl App {
     pub fn new() -> Self {
-        Self {
+        let config = Config::load();
+
+        let exa_key = config.exa_key.clone()
+            .or_else(|| std::env::var("EXA_API_KEY").ok())
+            .unwrap_or_default();
+
+        let mut app = Self {
             mode: Mode::Edit,
             input_mode: InputMode::Normal,
             overlay: Overlay::None,
@@ -125,11 +133,9 @@ impl App {
             messages: vec![],
             provider: None,
             provider_name: None,
-            cerebras_key: None,
-            cerebras_model: None,
-            exa: Arc::new(ExaClient::new(
-                std::env::var("EXA_API_KEY").unwrap_or_default(),
-            )),
+            cerebras_key: config.cerebras_key.clone(),
+            cerebras_model: config.cerebras_model.clone(),
+            exa: Arc::new(ExaClient::new(exa_key)),
             status: String::new(),
             status_flash: None,
             scroll: 0,
@@ -152,8 +158,27 @@ impl App {
             auto_scroll: std::cell::Cell::new(true),
             picker: None,
             attached_files: vec![],
-            model_picker_idx: 2, // default = gpt-oss-120b (index 2)
-            nvidia_key: None,
+            model_picker_idx: 2,
+            nvidia_key: config.nvidia_key.clone(),
+            config,
+        };
+
+        app.restore_provider();
+        app
+    }
+
+    fn restore_provider(&mut self) {
+        if let (Some(ref key), Some(ref model)) = (&self.cerebras_key, &self.cerebras_model) {
+            let provider = Arc::new(CerebrasProvider::new(key.clone(), Some(model.clone())));
+            self.provider = Some(provider);
+            self.provider_name = Some(format!("cerebras · {}", model));
+            self.flash_status(format!("restored · {}", model));
+        } else if let Some(ref key) = &self.nvidia_key {
+            let model = "z-ai/glm4.7".to_string();
+            let provider = Arc::new(NvidiaProvider::new(key.clone(), Some(model.clone())));
+            self.provider = Some(provider);
+            self.provider_name = Some(format!("nvidia · {}", model));
+            self.flash_status("restored · nvidia · z-ai/glm4.7".to_string());
         }
     }
 
@@ -229,6 +254,7 @@ impl App {
                         if key.modifiers.contains(KeyModifiers::CONTROL)
                             && key.code == KeyCode::Char('c')
                         {
+                            self.config.save();
                             break;
                         }
 
@@ -373,6 +399,8 @@ impl App {
                                         self.provider_name = self.cerebras_key.as_ref()
                                             .map(|_| format!("cerebras · {}", model));
                                     }
+                                    self.config.cerebras_model = self.cerebras_model.clone();
+                                    self.config.save();
                                     self.flash_status(format!("model → {}", model));
                                     self.overlay = Overlay::None;
                                 }
@@ -456,7 +484,10 @@ impl App {
                         // ── Normal AI agent keys ─────────────────────────────
                         match self.input_mode {
                             InputMode::Normal => match key.code {
-                                KeyCode::Char('q') => break,
+                                KeyCode::Char('q') => {
+                                    self.config.save();
+                                    break;
+                                }
                                 KeyCode::Char('p') => {
                                     self.mode = Mode::Plan;
                                     self.flash_status("plan mode — web search enabled".to_string());
@@ -535,6 +566,7 @@ impl App {
             }
 
             if self.should_quit {
+                self.config.save();
                 break;
             }
         }
@@ -727,6 +759,10 @@ impl App {
                 self.nvidia_key = None;
                 self.cerebras_model = Some(model.clone());
                 self.provider_name = Some(format!("cerebras · {}", model));
+                self.config.cerebras_key = self.cerebras_key.clone();
+                self.config.cerebras_model = self.cerebras_model.clone();
+                self.config.nvidia_key = None;
+                self.config.save();
                 self.flash_status(format!("connected · {} — use /models to switch model", model));
                 self.scroll_to_bottom();
             }
@@ -738,8 +774,12 @@ impl App {
                 self.nvidia_key = Some(api_key);
                 self.cerebras_key = None;
                 self.cerebras_model = None;
-                self.model_picker_idx = 0; // z-ai/glm4.7 is first in NVIDIA_MODELS
+                self.model_picker_idx = 0;
                 self.provider_name = Some(format!("nvidia · {}", model));
+                self.config.nvidia_key = self.nvidia_key.clone();
+                self.config.cerebras_key = None;
+                self.config.cerebras_model = None;
+                self.config.save();
                 self.flash_status(
                     "connected to nvidia · z-ai/glm4.7 — note: nvidia endpoints are slower than cerebras".to_string(),
                 );
@@ -769,6 +809,8 @@ impl App {
             }
             ["/exa", key] => {
                 self.exa = Arc::new(ExaClient::new(key.to_string()));
+                self.config.exa_key = Some(key.to_string());
+                self.config.save();
                 self.flash_status("exa api key updated".to_string());
             }
             ["/new"] => self.new_session(),

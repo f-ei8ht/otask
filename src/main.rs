@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod edit_chat;
 mod editor;
 mod exa;

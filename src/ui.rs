@@ -41,9 +41,10 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.messages.is_empty() {
         draw_welcome(f, app, area);
     } else {
+        let input_h = input_area_height(&app.input, area.width);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1), Constraint::Length(3)])
+            .constraints([Constraint::Min(1), Constraint::Length(1), Constraint::Length(input_h)])
             .split(area);
         draw_messages(f, app, chunks[0]);
         draw_footer(f, app, chunks[1]);
@@ -603,14 +604,17 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
         Rect { x: area.x, y: area.y + center_y.saturating_sub(2), width: area.width, height: 1 },
     );
 
+    let input_w = area.width * 3 / 5;
+    let input_h = input_area_height(&app.input, input_w);
+
     draw_input(
         f,
         app,
         Rect {
             x: area.x + area.width / 5,
             y: area.y + input_y,
-            width: area.width * 3 / 5,
-            height: 3,
+            width: input_w,
+            height: input_h,
         },
     );
 
@@ -894,6 +898,113 @@ fn visual_cursor_pos(input: &str, cursor_byte: usize) -> usize {
     visual
 }
 
+// ─── Input ───────────────────────────────────────────────────────────────────
+
+/// Build a plain visual string from raw input, expanding @mentions to their
+/// rendered width so line-count and cursor calculations are accurate.
+fn visual_input_str(input: &str) -> String {
+    let mut s = String::new();
+    let mut remaining = input;
+    while !remaining.is_empty() {
+        if let Some(at_pos) = remaining.find('@') {
+            if at_pos > 0 {
+                s.push_str(&remaining[..at_pos]);
+            }
+            let after = &remaining[at_pos + 1..];
+            let word_end = after
+                .find(|c: char| c == ' ' || c == '\t')
+                .unwrap_or(after.len());
+            let fname = &after[..word_end];
+            if !fname.is_empty() {
+                let kind = file_kind(fname);
+                let badge = match kind {
+                    FileKind::Dir   => " dir ",
+                    FileKind::Image => " img ",
+                    FileKind::File  => " file",
+                };
+                s.push_str(badge);
+                s.push_str(" │ ");
+                s.push_str(fname);
+            } else {
+                s.push('@');
+            }
+            remaining = &after[word_end..];
+        } else {
+            s.push_str(remaining);
+            break;
+        }
+    }
+    s
+}
+
+/// How many lines `visual` occupies at the given character width
+/// (character-by-character wrapping, same as `wrap_mention_spans`).
+fn visual_input_lines(visual: &str, width: usize) -> usize {
+    if visual.is_empty() {
+        return 1;
+    }
+    if width == 0 {
+        return visual.len().max(1);
+    }
+    let mut lines = 1usize;
+    let mut col   = 0usize;
+    for c in visual.chars() {
+        if c == '\n' {
+            lines += 1;
+            col = 0;
+        } else if col >= width {
+            lines += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    lines
+}
+
+/// Return the height the input box needs:  2 (borders) + 1 (status) + text lines.
+fn input_area_height(input: &str, total_w: u16) -> u16 {
+    let inner_w = total_w.saturating_sub(2);                 // minus left/right border
+    let vis   = visual_input_str(input);
+    let tlines = visual_input_lines(&vis, inner_w as usize);
+    (tlines as u16 + 3).clamp(3, 14)
+}
+
+/// Split a list of styled spans into lines, wrapping character-by-character
+/// at `max_w`.  Returns one `Line` per wrapped row.
+fn wrap_mention_spans(spans: &[Span<'static>], max_w: usize) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = vec![];
+    let mut current: Vec<Span<'static>> = vec![];
+    let mut col = 0usize;
+
+    for span in spans {
+        for c in span.content.chars() {
+            if c == '\n' || (max_w > 0 && col >= max_w) {
+                if !current.is_empty() {
+                    lines.push(Line::from(current));
+                    current = vec![];
+                }
+                col = 0;
+                if c == '\n' {
+                    continue;
+                }
+            }
+            if current.is_empty() || current.last().map(|s| s.style) != Some(span.style) {
+                current.push(Span::styled(String::new(), span.style));
+            }
+            current.last_mut().unwrap().content.to_mut().push(c);
+            col += 1;
+        }
+    }
+    if !current.is_empty() {
+        lines.push(Line::from(current));
+    }
+    if lines.is_empty() {
+        lines.push(Line::from(""));
+    }
+    lines
+}
+
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let is_typing = app.input_mode == InputMode::Typing;
     let border_color = if is_typing { ACCENT } else { DIM };
@@ -904,14 +1015,10 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         "Ask anything…"
     };
 
-    let display = if app.input.is_empty() && !is_typing {
-        Line::from(Span::styled(placeholder, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)))
-    } else {
-        Line::from(mention_spans(&app.input))
-    };
-
     let mc = match app.mode { Mode::Plan => ACCENT, Mode::Edit => GREEN };
-    let pinfo = app.provider_name.as_deref().map(|n| format!(" {} ", n)).unwrap_or_else(|| " no provider ".to_string());
+    let pinfo = app.provider_name.as_deref()
+        .map(|n| format!(" {} ", n))
+        .unwrap_or_else(|| " no provider ".to_string());
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -920,12 +1027,33 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let text_h = inner.height.saturating_sub(1).max(1);
+    let max_w  = inner.width as usize;
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .constraints([Constraint::Length(text_h), Constraint::Length(1)])
         .split(inner);
 
-    f.render_widget(Paragraph::new(display), chunks[0]);
+    // ── Text area ──────────────────────────────────────────────────────────
+    if app.input.is_empty() && !is_typing {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                placeholder,
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            ))),
+            chunks[0],
+        );
+    } else {
+        let spans   = mention_spans(&app.input);
+        let wrapped = wrap_mention_spans(&spans, max_w);
+        f.render_widget(
+            Paragraph::new(Text::from(wrapped)),
+            chunks[0],
+        );
+    }
+
+    // ── Status line ────────────────────────────────────────────────────────
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(format!(" {} ", app.mode), Style::default().fg(mc).add_modifier(Modifier::BOLD)),
@@ -937,9 +1065,18 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         chunks[1],
     );
 
+    // ── Cursor ─────────────────────────────────────────────────────────────
     if is_typing {
         let vcol = visual_cursor_pos(&app.input, app.cursor_pos);
-        f.set_cursor_position((inner.x + vcol as u16, inner.y));
+        let (cursor_row, cursor_col) = if max_w > 0 {
+            (vcol / max_w, vcol % max_w)
+        } else {
+            (0, 0)
+        };
+        f.set_cursor_position((
+            inner.x + cursor_col as u16,
+            inner.y + cursor_row as u16,
+        ));
     }
 }
 
